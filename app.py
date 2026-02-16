@@ -101,60 +101,20 @@ REGION_CACHE = {country: list(regions.keys()) for country, regions in COUNTRIES_
 
 class TravelAssistant:
     """春节旅游计划AI助手类"""
-    
+
     def __init__(self):
         self.api_url = API_URL
         self.model_name = MODEL_NAME
         self.api_key = API_KEY
 
-    def post_process_response(self, response_text: str) -> str:
-        """
-        对AI返回的响应进行后处理，统一替换特定词汇并优化表述
-
-        Args:
-            response_text: AI返回的原始文本
-
-        Returns:
-            处理后的文本
-        """
-        # 统一替换雨具相关词汇为"雨衣雨披"
-        response_text = response_text.replace("雨具", "雨衣雨披")
-        response_text = response_text.replace("雨伞", "雨衣雨披")
-        response_text = response_text.replace("雨衣或雨披", "雨衣雨披")
-        response_text = response_text.replace("雨衣、雨披", "雨衣雨披")
-
-        # 替换独立的"伞"字（避免误替换"伞兵"、"伞形"等）
-        import re
-        response_text = re.sub(r'([带撑打备准备])(伞)', r'\1雨衣雨披', response_text)
-
-        response_text = re.sub(r'([一二三四五六七八九十\d]+把)(伞)', r'\1雨衣雨披', response_text)
-        response_text = re.sub(r'(把)(伞)', r'\1雨衣雨披', response_text)
-
-        # 去除重复表述
-        pattern = r'(建议.*?雨衣雨披.*?)，.*?最好.*?雨衣雨披'
-        response_text = re.sub(pattern, r'\1', response_text)
-
-        # 去除连续重复的"雨衣雨披"
-        while '雨衣雨披和雨衣雨披' in response_text or '雨衣雨披、雨衣雨披' in response_text or '雨衣雨披，雨衣雨披' in response_text or '雨衣雨披,雨衣雨披' in response_text or '雨衣雨披与雨衣雨披' in response_text:
-            response_text = response_text.replace('雨衣雨披和雨衣雨披', '雨衣雨披')
-            response_text = response_text.replace('雨衣雨披、雨衣雨披', '雨衣雨披')
-            response_text = response_text.replace('雨衣雨披，雨衣雨披', '雨衣雨披')
-            response_text = response_text.replace('雨衣雨披,雨衣雨披', '雨衣雨披')
-            response_text = response_text.replace('雨衣雨披与雨衣雨披', '雨衣雨披')
-
-        # 优化表述
-        response_text = response_text.replace("携带雨衣雨披等防雨装备", "准备好雨衣雨披")
-
-        return response_text
-
     def call_ai_api(self, prompt: str, system_prompt: str = None) -> str:
         """
         调用ModelArts Studio API
-        
+
         Args:
             prompt: 用户提示词
             system_prompt: 系统提示词（可选）
-            
+
         Returns:
             AI返回的响应文本
         """
@@ -163,44 +123,44 @@ class TravelAssistant:
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {self.api_key}"
             }
-            
+
             messages = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
-            
+
             payload = {
                 "model": self.model_name,
                 "messages": messages,
                 "temperature": 0.7,
                 "max_tokens": 2000
             }
-            
+
             response = requests.post(
                 self.api_url,
                 headers=headers,
                 json=payload,
                 timeout=60
             )
-            
+
             if response.status_code == 200:
                 result = response.json()
                 content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-                return self.post_process_response(content)
+                return content
             else:
                 return f"API调用失败: {response.status_code} - {response.text}"
-                
+
         except Exception as e:
             return f"调用AI服务时发生错误: {str(e)}"
-    
+
     def get_weather_info(self, location: str, days: int = 7) -> str:
         """
         获取天气信息（模拟数据，实际可接入真实天气API）
-        
+
         Args:
             location: 地点名称
             days: 查询天数
-            
+
         Returns:
             天气信息文本
         """
@@ -211,28 +171,28 @@ class TravelAssistant:
 
 【重要提醒】
 如果预报中包含以下天气情况，请在天气预报后添加醒目的出行建议：
-- 雨天（小雨、中雨、大雨、暴雨等）：请添加"☔ 温馨提示：预计有降雨，建议您穿雨衣雨披，注意出行安全。"
+- 雨天（小雨、中雨、大雨、暴雨等）：请添加"☔ 温馨提示：预计有降雨，建议您带好雨具，注意出行安全。"
 - 台风天气：请添加"🌀 温馨提示：预计有台风影响，建议您密切关注天气变化，做好防风防雨准备，必要时调整出行计划。"
 - 雪天：请添加"❄️ 温馨提示：预计有降雪，建议您携带防寒装备，注意保暖和防滑。"
 - 大风天气：请添加"💨 温馨提示：预计有大风，建议您注意防风，避免户外高空活动。"
 
 请用醒目的格式（如加粗、emoji等）突出显示这些安全提醒。"""
-        
+
         system_prompt = """你是一个专业的天气预报助手，请根据地点的气候特点和季节特点，生成合理详细的天气预报信息，并在恶劣天气时提供安全出行建议。"""
-        
+
         return self.call_ai_api(prompt, system_prompt)
-    
+
     def get_attraction_info(self, attraction: str) -> Tuple[str, str]:
         """
         获取景点介绍信息和天气
-        
+
         Args:
             attraction: 景点名称
-            
+
         Returns:
             (景点介绍, 天气信息)
         """
-    
+
         prompt = f"""请详细介绍景点"{attraction}"，包括以下内容：
 1. 景点位置和基本信息
 2. 历史文化背景
@@ -244,29 +204,29 @@ class TravelAssistant:
 8. 周边配套设施
 
 请用清晰的结构化方式呈现，便于阅读。"""
-        
+
         system_prompt = """你是一个专业的旅游景点介绍专家，请提供准确、详细、实用的景点介绍信息。"""
-        
+
         attraction_info = self.call_ai_api(prompt, system_prompt)
-        
-    
+
+
         weather_info = self.get_weather_info(attraction, days=7)
-        
+
         return attraction_info, weather_info
-    
+
     def recommend_attractions(self, country: str, city: str = None) -> Tuple[str, str]:
         """
         推荐目的地知名景点和天气
-        
+
         Args:
             country: 国家
             city: 城市/地区
-            
+
         Returns:
             (景点推荐, 天气信息)
         """
         location = f"{country}{city}" if city else country
-        
+
         prompt = f"""请推荐{location}春节期间值得游览的知名景点，包括以下内容：
 1. 推荐至少5-10个必游景点
 2. 每个景点的简要介绍
@@ -276,91 +236,91 @@ class TravelAssistant:
 6. 交通方式建议
 
 请用清晰的结构化方式呈现，便于游客参考。"""
-        
+
         system_prompt = """你是一个专业的旅游规划师，熟悉全球各地的旅游景点，能够为游客提供实用的景点推荐建议。"""
-        
+
         attractions = self.call_ai_api(prompt, system_prompt)
         weather = self.get_weather_info(location, days=7)
-        
+
         return attractions, weather
-    
+
     def plan_route(self, start: str, end: str, transport_type: str) -> str:
         """
         规划出行交通路线
-        
+
         Args:
             start: 起点
             end: 终点
             transport_type: 交通方式（自驾/公共交通）
-            
+
         Returns:
             路线规划信息
         """
         if transport_type == "自驾":
-              prompt = f"""请为从{start}到{end}的自驾路线提供详细的规划建议，包括：
+                prompt = f"""请为从{start}到{end}的自驾路线提供详细的规划建议，包括：
 
-  【基础路线信息】
-  1. 推荐的行驶路线和高速公路
-  2. 预计行驶距离和耗时
-  3. 路况注意事项和驾驶建议
-  4. 可能的替代路线
-  5. 春节期间高速免费政策和限行提醒（如适用）
-  6. 停车建议
+    【基础路线信息】
+    1. 推荐的行驶路线和高速公路
+    2. 预计行驶距离和耗时
+    3. 路况注意事项和驾驶建议
+    4. 可能的替代路线
+    5. 春节期间高速免费政策和限行提醒（如适用）
+    6. 停车建议
 
-  【服务区休息建议】（重要）
-  7. 根据行驶距离和时长，推荐合理的休息时间间隔：
-     - 建议每2-3小时或200公里休息一次
-     - 长途驾驶建议每4小时进行一次较长时间休息（15-30分钟）
-     - 标注最佳休息时间点和位置
+    【服务区休息建议】（重要）
+    7. 根据行驶距离和时长，推荐合理的休息时间间隔：
+       - 建议每2-3小时或200公里休息一次
+       - 长途驾驶建议每4小时进行一次较长时间休息（15-30分钟）
+       - 标注最佳休息时间点和位置
 
-  8. 推荐休息服务区列表：
-     - 列出沿途主要服务区的名称、位置（距离起点的公里数）
-     - 说明每个推荐服务区的设施情况（餐饮、加油、卫生间、便利店、WiFi、充电桩等）
-     - 标注哪些服务区适合长时间休息（有餐厅、休息区），哪些适合短暂停留
-     - 标注服务区的开放时间和春节营业情况
+    8. 推荐休息服务区列表：
+       - 列出沿途主要服务区的名称、位置（距离起点的公里数）
+       - 说明每个推荐服务区的设施情况（餐饮、加油、卫生间、便利店、WiFi、充电桩等）
+       - 标注哪些服务区适合长时间休息（有餐厅、休息区），哪些适合短暂停留
+       - 标注服务区的开放时间和春节营业情况
 
-  【特色服务区推荐】（重点推荐）
-  9. 美食特色服务区：
-     - 推荐有地方特色美食的服务区（如阳澄湖服务区的大闸蟹、嘉兴服务区的粽子等）
-     - 推荐有知名连锁餐厅的服务区
-     - 推荐有特色小吃的服务区
+    【特色服务区推荐】（重点推荐）
+    9. 美食特色服务区：
+       - 推荐有地方特色美食的服务区（如阳澄湖服务区的大闸蟹、嘉兴服务区的粽子等）
+       - 推荐有知名连锁餐厅的服务区
+       - 推荐有特色小吃的服务区
 
-  10. 景观特色服务区：
-      - 推荐有特色景观或打卡点的服务区（如园林式服务区、观景台等）
-      - 推荐建筑风格独特的服务区
-      - 推荐周边有景点的服务区
+    10. 景观特色服务区：
+        - 推荐有特色景观或打卡点的服务区（如园林式服务区、观景台等）
+        - 推荐建筑风格独特的服务区
+        - 推荐周边有景点的服务区
 
-  11. 服务优质服务区：
-      - 推荐设施完善、服务优质的服务区（五星级服务区）
-      - 推荐有特色商品或纪念品的服务区
-      - 推荐有亲子设施、宠物友好等服务区
+    11. 服务优质服务区：
+        - 推荐设施完善、服务优质的服务区（五星级服务区）
+        - 推荐有特色商品或纪念品的服务区
+        - 推荐有亲子设施、宠物友好等服务区
 
-  12. 春节特色服务区：
-      - 春节期间有特殊活动或装饰的服务区
-      - 提供春节特色餐饮的服务区
-      - 有年货市集的服务区
+    12. 春节特色服务区：
+        - 春节期间有特殊活动或装饰的服务区
+        - 提供春节特色餐饮的服务区
+        - 有年货市集的服务区
 
-  【出行建议】
-  13. 春节出行高峰期服务区拥挤预警和应对建议
-  14. 服务区加油排队建议（建议避开高峰时段）
-  15. 电动汽车充电服务区推荐（如有）
+    【出行建议】
+    13. 春节出行高峰期服务区拥挤预警和应对建议
+    14. 服务区加油排队建议（建议避开高峰时段）
+    15. 电动汽车充电服务区推荐（如有）
 
-  【沿途天气预警】（重点提醒）
-  16. 沿途天气情况：
-     - 列出从{start}到{end}沿途主要城市/地区的天气情况
-     - 包含天气状况、温度、风力风向等信息
-     - 标注可能出现恶劣天气的路段
+    【沿途天气预警】（重点提醒）
+    16. 沿途天气情况：
+       - 列出从{start}到{end}沿途主要城市/地区的天气情况
+       - 包含天气状况、温度、风力风向等信息
+       - 标注可能出现恶劣天气的路段
 
-  17. 恶劣天气出行提醒（重要）：
-     - 雨天提醒：☔ 温馨提示：沿途预计有降雨，建议您准备好雨衣雨披，注意保持安全车距，减速慢行，谨慎驾驶。
-     - 台风提醒：🌀 温馨提示：沿途预计有台风影响，建议您密切关注天气预警，必要时推迟出行或调整路线，避免在台风期间自驾。
-     - 大风提醒：💨 温馨提示：沿途预计有大风天气，建议您注意防风，大型车辆需特别注意侧风影响，谨慎驾驶。
-     - 雾霾提醒：🌫️ 温馨提示：沿途预计有雾霾天气，建议您开启雾灯，保持安全车距，必要时选择服务区休息等待天气好转。
-     - 暴雪提醒：❄️ 温馨提示：沿途预计有暴雪天气，建议您安装防滑链，准备应急物资，必要时推迟出行。
+    17. 恶劣天气出行提醒（重要）：
+       - 雨天提醒：☔ 温馨提示：沿途预计有降雨，建议您带好雨具，注意保持安全车距，减速慢行，谨慎驾驶。
+       - 台风提醒：🌀 温馨提示：沿途预计有台风影响，建议您密切关注天气预警，必要时推迟出行或调整路线，避免在台风期间自驾。
+       - 大风提醒：💨 温馨提示：沿途预计有大风天气，建议您注意防风，大型车辆需特别注意侧风影响，谨慎驾驶。
+       - 雾霾提醒：🌫️ 温馨提示：沿途预计有雾霾天气，建议您开启雾灯，保持安全车距，必要时选择服务区休息等待天气好转。
+       - 暴雪提醒：❄️ 温馨提示：沿途预计有暴雪天气，建议您安装防滑链，准备应急物资，必要时推迟出行。
 
-  请用清晰的分段和列表形式呈现，便于驾驶员参考。特别注意春节出行高峰期，服务区可能较为拥挤，建议提前规划休息点。"""
+    请用清晰的分段和列表形式呈现，便于驾驶员参考。特别注意春节出行高峰期，服务区可能较为拥挤，建议提前规划休息点。"""
 
-              system_prompt = """你是一个专业的自驾路线规划师，熟悉全国高速公路服务区分布和特色，能够为用户提供详细、实用的自驾出行建议，特别是服务区休息规划和特色服务区推荐，以及沿途天气预警和恶劣天气出行提醒。"""
+                system_prompt = """你是一个专业的自驾路线规划师，熟悉全国高速公路服务区分布和特色，能够为用户提供详细、实用的自驾出行建议，特别是服务区休息规划和特色服务区推荐，以及沿途天气预警和恶劣天气出行提醒。"""
         else:  # 公共交通
             prompt = f"""请为从{start}到{end}的公共交通出行提供详细的规划建议，包括所有可能的交通方式：
 1. 飞机：推荐航班、机场信息、飞行时长、价格区间
@@ -379,7 +339,7 @@ class TravelAssistant:
    - 标注可能出现恶劣天气的路段
 
 10. 恶劣天气出行提醒（重要）：
-    - 雨天提醒：☔ 温馨提示：沿途预计有降雨，建议您准备好雨衣雨披，注意出行安全。
+    - 雨天提醒：☔ 温馨提示：沿途预计有降雨，建议您带好雨具，注意出行安全。
     - 台风提醒：🌀 温馨提示：沿途预计有台风影响，建议您密切关注天气预警，必要时推迟出行或调整出行计划。
     - 大风提醒：💨 温馨提示：沿途预计有大风天气，建议您注意防风，避免户外高空活动。
     - 暴雪提醒：❄️ 温馨提示：沿途预计有暴雪天气，建议您注意保暖和防滑，必要时推迟出行。
@@ -387,18 +347,18 @@ class TravelAssistant:
 请提供全面的公共交通出行方案。"""
 
             system_prompt = """你是一个专业的公共交通出行规划师，熟悉各种交通方式，能够为用户提供全面的出行方案，以及沿途天气预警和恶劣天气出行提醒。"""
-        
+
         return self.call_ai_api(prompt, system_prompt)
-    
+
     def plan_itinerary(self, destination: str, days: int, travel_style: str) -> str:
         """
         规划每日游玩行程
-        
+
         Args:
             destination: 目的地
             days: 游玩天数
             travel_style: 游玩风格
-            
+
         Returns:
             每日行程规划
         """
@@ -417,12 +377,12 @@ class TravelAssistant:
 10. 根据"{travel_style}"风格重点突出相关内容
 
 【天气提醒】
-11. 如果行程中遇到雨天，请特别添加提醒："☔ 温馨提示：预计有降雨，建议您穿雨衣雨披，注意出行安全。"
+11. 如果行程中遇到雨天，请特别添加提醒："☔ 温馨提示：预计有降雨，建议您带好雨具，注意出行安全。"
 
 请按天详细列出，便于执行。如果天数较长，可以安排返程或休息日。"""
 
-        system_prompt = """你是一个专业的行程规划师，能够根据用户的需求和喜好，制定详细、实用、个性化的旅游行程计划，并在雨天提醒用户穿雨衣雨披。"""
-        
+        system_prompt = """你是一个专业的行程规划师，能够根据用户的需求和喜好，制定详细、实用、个性化的旅游行程计划，并在雨天提醒用户带好雨具。"""
+
         return self.call_ai_api(prompt, system_prompt)
 
 
@@ -451,24 +411,24 @@ def update_regions(country: str):
                 value=None,
                 allow_custom_value=True
             )
-        
+
 
         matched_country = None
         for c in REGION_CACHE.keys():
             if c.lower() == country.lower():
                 matched_country = c
                 break
-        
+
         if matched_country:
-    
+
             regions, default_value = get_regions_cached(matched_country)
-    
+
             return gr.update(
                 choices=list(regions),  # 将tuple转回list
                 value=default_value,
                 allow_custom_value=True  # 允许用户手动输入
             )
-        
+
 
         return gr.update(
             choices=[],
@@ -491,7 +451,7 @@ def recommend_attractions_handler(country: str, city: str) -> Tuple[str, str]:
     try:
         if not country:
             return "请先选择国家", ""
-        
+
         attractions, weather = assistant.recommend_attractions(country, city if city else None)
         return attractions, weather
     except Exception as e:
@@ -507,7 +467,7 @@ def get_attraction_info_handler(attraction: str) -> Tuple[str, str]:
     try:
         if not attraction:
             return "请输入景点名称", ""
-        
+
         info, weather = assistant.get_attraction_info(attraction)
         return info, weather
     except Exception as e:
@@ -523,7 +483,7 @@ def plan_route_handler(start: str, end: str, transport_type: str) -> str:
     try:
         if not start or not end:
             return "请输入起点和终点"
-        
+
         return assistant.plan_route(start, end, transport_type)
     except Exception as e:
         import traceback
@@ -538,7 +498,7 @@ def plan_itinerary_handler(destination: str, days: int, travel_style: str) -> st
     try:
         if not destination or not days:
             return "请输入目的地和游玩天数"
-        
+
         return assistant.plan_itinerary(destination, days, travel_style)
     except Exception as e:
         import traceback
@@ -550,13 +510,13 @@ def plan_itinerary_handler(destination: str, days: int, travel_style: str) -> st
 
 def create_interface():
     """创建Gradio界面"""
-    
+
 
     custom_css = """
     .gradio-container {
         font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif !important;
     }
-    
+
     .header {
         text-align: center;
         padding: 30px 20px;
@@ -565,7 +525,7 @@ def create_interface():
         margin-bottom: 25px;
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
     }
-    
+
     .header h1 {
         color: white;
         font-size: 2.5em;
@@ -573,24 +533,24 @@ def create_interface():
         font-weight: 700;
         text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
     }
-    
+
     .header p {
         color: rgba(255, 255, 255, 0.95);
         font-size: 1.1em;
         margin-top: 10px;
     }
-    
+
     .tab-content {
         padding: 20px;
     }
-    
+
     .info-box {
         background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
         border-radius: 10px;
         padding: 15px;
         margin: 15px 0;
     }
-    
+
     .result-box {
         background: #ffffff;
         border: 2px solid #e0e0e0;
@@ -600,25 +560,25 @@ def create_interface():
         max-height: 500px;
         overflow-y: auto;
     }
-    
+
     .result-box::-webkit-scrollbar {
         width: 8px;
     }
-    
+
     .result-box::-webkit-scrollbar-track {
         background: #f1f1f1;
         border-radius: 4px;
     }
-    
+
     .result-box::-webkit-scrollbar-thumb {
         background: #888;
         border-radius: 4px;
     }
-    
+
     .result-box::-webkit-scrollbar-thumb:hover {
         background: #555;
     }
-    
+
     .btn-primary {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
         border: none !important;
@@ -628,40 +588,40 @@ def create_interface():
         border-radius: 25px !important;
         transition: all 0.3s ease !important;
     }
-    
+
     .btn-primary:hover {
         transform: translateY(-2px);
         box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
     }
-    
+
     .input-box {
         border-radius: 10px !important;
     }
-    
+
     .dropdown {
         border-radius: 10px !important;
     }
-    
+
     .label {
         font-weight: 600 !important;
         color: #333 !important;
     }
     """
-    
+
     with gr.Blocks(css=custom_css, title="春节旅游计划AI助手") as app:
-    
+
         gr.HTML("""
         <div class="header">
             <h1>🧧 春节旅游计划AI助手 🧧</h1>
             <p>智能规划您的春节假期 · 探索精彩世界</p>
         </div>
         """)
-        
+
         with gr.Tabs():
-        
+
             with gr.TabItem("🌍 目的地推荐", id=1):
                 gr.Markdown("### 选择您的旅行目的地，获取景点推荐和天气信息")
-                
+
                 with gr.Row():
                     with gr.Column(scale=1):
                         country_dropdown = gr.Dropdown(
@@ -681,35 +641,35 @@ def create_interface():
                         )
 
                         recommend_btn = gr.Button("🔍 获取推荐", variant="primary", size="lg")
-                    
+
                     with gr.Column(scale=2):
                         attractions_output = gr.Markdown(
                             label="景点推荐",
                             value="请选择国家和城市，然后点击获取推荐"
                         )
-                        
+
                         weather_output = gr.Markdown(
                             label="天气预报",
                             value="天气信息将在这里显示"
                         )
-                
-            
+
+
                 country_dropdown.change(
                     fn=update_regions,
                     inputs=country_dropdown,
                     outputs=city_dropdown
                 )
-                
+
                 recommend_btn.click(
                     fn=recommend_attractions_handler,
                     inputs=[country_dropdown, city_dropdown],
                     outputs=[attractions_output, weather_output]
                 )
-            
-        
+
+
             with gr.TabItem("🏛️ 景点查询", id=2):
                 gr.Markdown("### 输入景点名称，获取详细介绍和天气信息")
-                
+
                 with gr.Row():
                     with gr.Column(scale=1):
                         attraction_input = gr.Textbox(
@@ -717,74 +677,74 @@ def create_interface():
                             placeholder="例如：故宫、埃菲尔铁塔、富士山...",
                             info="支持手动输入任意景点名称"
                         )
-                        
+
                         attraction_query_btn = gr.Button("🔍 查询景点", variant="primary", size="lg")
-                    
+
                     with gr.Column(scale=2):
                         attraction_info_output = gr.Markdown(
                             label="景点介绍",
                             value="景点介绍信息将在这里显示"
                         )
-                        
+
                         attraction_weather_output = gr.Markdown(
                             label="天气信息",
                             value="天气信息将在这里显示"
                         )
-                
+
                 attraction_query_btn.click(
                     fn=get_attraction_info_handler,
                     inputs=[attraction_input],
                     outputs=[attraction_info_output, attraction_weather_output]
                 )
-            
-        
+
+
             with gr.TabItem("🚗 交通路线规划", id=3):
                 gr.Markdown("### 规划您的出行路线")
-                
+
                 with gr.Row():
                     with gr.Column(scale=1):
                         start_point = gr.Textbox(
                             label="出发地",
                             placeholder="例如：北京、上海..."
                         )
-                        
+
                         end_point = gr.Textbox(
                             label="目的地",
                             placeholder="例如：三亚、成都..."
                         )
-                        
+
                         transport_type = gr.Radio(
                             choices=["自驾", "公共交通"],
                             value="自驾",
                             label="交通方式",
                             info="选择您的出行方式"
                         )
-                        
+
                         route_btn = gr.Button("🗺️ 规划路线", variant="primary", size="lg")
-                    
+
                     with gr.Column(scale=2):
                         route_output = gr.Markdown(
                             label="路线规划",
                             value="路线规划信息将在这里显示"
                         )
-                
+
                 route_btn.click(
                     fn=plan_route_handler,
                     inputs=[start_point, end_point, transport_type],
                     outputs=[route_output]
                 )
-            
-        
+
+
             with gr.TabItem("📅 行程规划", id=4):
                 gr.Markdown("### 制定您的详细游玩行程")
-                
+
                 with gr.Row():
                     with gr.Column(scale=1):
                         itinerary_destination = gr.Textbox(
                             label="目的地",
                             placeholder="例如：北京、巴黎、东京..."
                         )
-                        
+
                         itinerary_days = gr.Slider(
                             minimum=1,
                             maximum=15,
@@ -793,34 +753,34 @@ def create_interface():
                             label="游玩天数",
                             info="选择您的游玩天数"
                         )
-                        
+
                         itinerary_style = gr.Dropdown(
                             choices=TRAVEL_STYLES,
                             value="人文历史",
                             label="游玩风格",
                             info="选择您偏好的游玩风格"
                         )
-                        
+
                         custom_style = gr.Textbox(
                             label="自定义风格（可选）",
                             placeholder="如果上述选项不合适，可以手动输入...",
                             info="手动输入您的游玩偏好"
                         )
-                        
+
                         itinerary_btn = gr.Button("📋 生成行程", variant="primary", size="lg")
-                    
+
                     with gr.Column(scale=2):
                         itinerary_output = gr.Markdown(
                             label="行程规划",
                             value="行程规划信息将在这里显示"
                         )
-                
+
                 itinerary_btn.click(
                     fn=plan_itinerary_handler,
                     inputs=[itinerary_destination, itinerary_days, itinerary_style],
                     outputs=[itinerary_output]
                 )
-        
+
         # 页脚
         gr.HTML("""
         <div style="text-align: center; padding: 20px; color: #666; margin-top: 30px;">
@@ -828,7 +788,7 @@ def create_interface():
             <p style="margin-top: 10px;">Powered by ModelArts Studio | 春节旅游计划AI助手</p>
         </div>
         """)
-    
+
     return app
 
 
@@ -841,13 +801,13 @@ def main():
     print(f"Model: {MODEL_NAME}")
     print(f"API Key: {'已设置' if API_KEY else '未设置'}")
     print("=" * 60)
-    
+
     if not API_KEY:
         print("⚠️  警告：API_KEY未设置，请确保环境变量已配置")
-    
+
 
     app = create_interface()
-    
+
 
     app.launch(
         server_name="127.0.0.1",
