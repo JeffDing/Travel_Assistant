@@ -109,7 +109,7 @@ class TravelAssistant:
 
     def post_process_response(self, response_text: str) -> str:
         """
-        对AI返回的响应进行后处理，统一替换特定词汇
+        对AI返回的响应进行后处理，统一替换特定词汇并优化表述
 
         Args:
             response_text: AI返回的原始文本
@@ -117,9 +117,34 @@ class TravelAssistant:
         Returns:
             处理后的文本
         """
-        # 替换规则：将"雨衣或雨披"和"雨衣、雨披"统一替换为"雨衣雨披"
+        # 统一替换雨具相关词汇为"雨衣雨披"
+        response_text = response_text.replace("雨具", "雨衣雨披")
+        response_text = response_text.replace("雨伞", "雨衣雨披")
         response_text = response_text.replace("雨衣或雨披", "雨衣雨披")
         response_text = response_text.replace("雨衣、雨披", "雨衣雨披")
+
+        # 替换独立的"伞"字（避免误替换"伞兵"、"伞形"等）
+        import re
+        response_text = re.sub(r'([带撑打备准备])(伞)', r'\1雨衣雨披', response_text)
+
+        response_text = re.sub(r'([一二三四五六七八九十\d]+把)(伞)', r'\1雨衣雨披', response_text)
+        response_text = re.sub(r'(把)(伞)', r'\1雨衣雨披', response_text)
+
+        # 去除重复表述
+        pattern = r'(建议.*?雨衣雨披.*?)，.*?最好.*?雨衣雨披'
+        response_text = re.sub(pattern, r'\1', response_text)
+
+        # 去除连续重复的"雨衣雨披"
+        while '雨衣雨披和雨衣雨披' in response_text or '雨衣雨披、雨衣雨披' in response_text or '雨衣雨披，雨衣雨披' in response_text or '雨衣雨披,雨衣雨披' in response_text or '雨衣雨披与雨衣雨披' in response_text:
+            response_text = response_text.replace('雨衣雨披和雨衣雨披', '雨衣雨披')
+            response_text = response_text.replace('雨衣雨披、雨衣雨披', '雨衣雨披')
+            response_text = response_text.replace('雨衣雨披，雨衣雨披', '雨衣雨披')
+            response_text = response_text.replace('雨衣雨披,雨衣雨披', '雨衣雨披')
+            response_text = response_text.replace('雨衣雨披与雨衣雨披', '雨衣雨披')
+
+        # 优化表述
+        response_text = response_text.replace("携带雨衣雨披等防雨装备", "准备好雨衣雨披")
+
         return response_text
 
     def call_ai_api(self, prompt: str, system_prompt: str = None) -> str:
@@ -186,7 +211,7 @@ class TravelAssistant:
 
 【重要提醒】
 如果预报中包含以下天气情况，请在天气预报后添加醒目的出行建议：
-- 雨天（小雨、中雨、大雨、暴雨等）：请添加"☔ 温馨提示：预计有降雨，建议您穿雨衣雨披，旅游时最好穿雨衣雨披，注意出行安全。"
+- 雨天（小雨、中雨、大雨、暴雨等）：请添加"☔ 温馨提示：预计有降雨，建议您穿雨衣雨披，注意出行安全。"
 - 台风天气：请添加"🌀 温馨提示：预计有台风影响，建议您密切关注天气变化，做好防风防雨准备，必要时调整出行计划。"
 - 雪天：请添加"❄️ 温馨提示：预计有降雪，建议您携带防寒装备，注意保暖和防滑。"
 - 大风天气：请添加"💨 温馨提示：预计有大风，建议您注意防风，避免户外高空活动。"
@@ -207,7 +232,7 @@ class TravelAssistant:
         Returns:
             (景点介绍, 天气信息)
         """
-        # 获取景点介绍
+    
         prompt = f"""请详细介绍景点"{attraction}"，包括以下内容：
 1. 景点位置和基本信息
 2. 历史文化背景
@@ -224,7 +249,7 @@ class TravelAssistant:
         
         attraction_info = self.call_ai_api(prompt, system_prompt)
         
-        # 获取天气信息
+    
         weather_info = self.get_weather_info(attraction, days=7)
         
         return attraction_info, weather_info
@@ -327,7 +352,7 @@ class TravelAssistant:
      - 标注可能出现恶劣天气的路段
 
   17. 恶劣天气出行提醒（重要）：
-     - 雨天提醒：☔ 温馨提示：沿途预计有降雨，建议您携带雨衣雨披等防雨装备，注意保持安全车距，减速慢行，谨慎驾驶。
+     - 雨天提醒：☔ 温馨提示：沿途预计有降雨，建议您准备好雨衣雨披，注意保持安全车距，减速慢行，谨慎驾驶。
      - 台风提醒：🌀 温馨提示：沿途预计有台风影响，建议您密切关注天气预警，必要时推迟出行或调整路线，避免在台风期间自驾。
      - 大风提醒：💨 温馨提示：沿途预计有大风天气，建议您注意防风，大型车辆需特别注意侧风影响，谨慎驾驶。
      - 雾霾提醒：🌫️ 温馨提示：沿途预计有雾霾天气，建议您开启雾灯，保持安全车距，必要时选择服务区休息等待天气好转。
@@ -354,7 +379,7 @@ class TravelAssistant:
    - 标注可能出现恶劣天气的路段
 
 10. 恶劣天气出行提醒（重要）：
-    - 雨天提醒：☔ 温馨提示：沿途预计有降雨，建议您携带雨衣雨披等防雨装备，注意出行安全。
+    - 雨天提醒：☔ 温馨提示：沿途预计有降雨，建议您准备好雨衣雨披，注意出行安全。
     - 台风提醒：🌀 温馨提示：沿途预计有台风影响，建议您密切关注天气预警，必要时推迟出行或调整出行计划。
     - 大风提醒：💨 温馨提示：沿途预计有大风天气，建议您注意防风，避免户外高空活动。
     - 暴雪提醒：❄️ 温馨提示：沿途预计有暴雪天气，建议您注意保暖和防滑，必要时推迟出行。
@@ -392,7 +417,7 @@ class TravelAssistant:
 10. 根据"{travel_style}"风格重点突出相关内容
 
 【天气提醒】
-11. 如果行程中遇到雨天，请特别添加提醒："☔ 温馨提示：预计有降雨，建议您穿雨衣雨披，旅游时最好穿雨衣雨披，注意出行安全。"
+11. 如果行程中遇到雨天，请特别添加提醒："☔ 温馨提示：预计有降雨，建议您穿雨衣雨披，注意出行安全。"
 
 请按天详细列出，便于执行。如果天数较长，可以安排返程或休息日。"""
 
@@ -419,7 +444,7 @@ def get_regions_cached(country: str) -> tuple:
 def update_regions(country: str):
     """根据选择的国家更新地区下拉框（Gradio 6.5.1优化版本 - 使用缓存）"""
     try:
-        # 处理None和空字符串
+
         if not country or not isinstance(country, str):
             return gr.update(
                 choices=[],
@@ -427,7 +452,7 @@ def update_regions(country: str):
                 allow_custom_value=True
             )
         
-        # 查找匹配的国家（支持模糊匹配）
+
         matched_country = None
         for c in REGION_CACHE.keys():
             if c.lower() == country.lower():
@@ -435,23 +460,23 @@ def update_regions(country: str):
                 break
         
         if matched_country:
-            # 使用缓存获取地区列表
+    
             regions, default_value = get_regions_cached(matched_country)
-            # Gradio 6.5.1: 使用gr.update()并明确设置allow_custom_value
+    
             return gr.update(
                 choices=list(regions),  # 将tuple转回list
                 value=default_value,
                 allow_custom_value=True  # 允许用户手动输入
             )
         
-        # 如果不在列表中，返回空的地区列表
+
         return gr.update(
             choices=[],
             value=None,
             allow_custom_value=True
         )
     except Exception as e:
-        # 捕获任何异常并返回安全的默认值
+
         import traceback
         print(f"update_regions错误: {e}")
         print(f"错误详情: {traceback.format_exc()}")
@@ -526,7 +551,7 @@ def plan_itinerary_handler(destination: str, days: int, travel_style: str) -> st
 def create_interface():
     """创建Gradio界面"""
     
-    # 自定义CSS样式
+
     custom_css = """
     .gradio-container {
         font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif !important;
@@ -624,7 +649,7 @@ def create_interface():
     """
     
     with gr.Blocks(css=custom_css, title="春节旅游计划AI助手") as app:
-        # 页面标题
+    
         gr.HTML("""
         <div class="header">
             <h1>🧧 春节旅游计划AI助手 🧧</h1>
@@ -633,7 +658,7 @@ def create_interface():
         """)
         
         with gr.Tabs():
-            # Tab 1: 目的地推荐
+        
             with gr.TabItem("🌍 目的地推荐", id=1):
                 gr.Markdown("### 选择您的旅行目的地，获取景点推荐和天气信息")
                 
@@ -668,7 +693,7 @@ def create_interface():
                             value="天气信息将在这里显示"
                         )
                 
-                # 联动事件 - 当国家改变时更新城市列表
+            
                 country_dropdown.change(
                     fn=update_regions,
                     inputs=country_dropdown,
@@ -681,7 +706,7 @@ def create_interface():
                     outputs=[attractions_output, weather_output]
                 )
             
-            # Tab 2: 景点查询
+        
             with gr.TabItem("🏛️ 景点查询", id=2):
                 gr.Markdown("### 输入景点名称，获取详细介绍和天气信息")
                 
@@ -712,7 +737,7 @@ def create_interface():
                     outputs=[attraction_info_output, attraction_weather_output]
                 )
             
-            # Tab 3: 交通路线规划
+        
             with gr.TabItem("🚗 交通路线规划", id=3):
                 gr.Markdown("### 规划您的出行路线")
                 
@@ -749,7 +774,7 @@ def create_interface():
                     outputs=[route_output]
                 )
             
-            # Tab 4: 行程规划
+        
             with gr.TabItem("📅 行程规划", id=4):
                 gr.Markdown("### 制定您的详细游玩行程")
                 
@@ -820,10 +845,10 @@ def main():
     if not API_KEY:
         print("⚠️  警告：API_KEY未设置，请确保环境变量已配置")
     
-    # 创建界面
+
     app = create_interface()
     
-    # 启动应用
+
     app.launch(
         server_name="127.0.0.1",
         server_port=7860,
