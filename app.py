@@ -13,9 +13,9 @@ from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 
 # 从环境变量获取API配置
-API_URL = os.getenv("API_URL", "https://api.modelarts-maas.com/v2/chat/completions")
-MODEL_NAME = os.getenv("MODEL_NAME", "deepseek-v3.2")
-API_KEY = os.getenv("API_KEY", "")
+API_URL = os.getenv("API_URL")
+MODEL_NAME = os.getenv("MODEL_NAME")
+API_KEY = os.getenv("API_KEY")
 
 
 # 国家和地区数据
