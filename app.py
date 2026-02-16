@@ -1,496 +1,669 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 春节旅游计划AI小助手
-使用Gradio构建Web界面，通过ModelArts Studio API实现AI功能
-国家和地区列表通过大模型动态获取
+使用Gradio + ModelArts Studio API实现
 """
 
 import os
 import gradio as gr
 import requests
 import json
-import re
+from datetime import datetime, timedelta
+from typing import Dict, List, Optional, Tuple
 
 # 从环境变量获取API配置
-API_URL = os.environ.get("API_URL", "")
-MODEL_NAME = os.environ.get("MODEL_NAME", "")
-API_KEY = os.environ.get("API_KEY", "")
-
-# 交通方式
-TRANSPORT_MODES = ["自驾", "公共交通（飞机/火车/高铁/长途汽车）"]
-
-# 缓存国家和城市数据
-countries_cache = None
-cities_cache = {}
+API_URL = os.getenv("API_URL", "https://api.modelarts-maas.com/v2/chat/completions")
+MODEL_NAME = os.getenv("MODEL_NAME", "deepseek-v3.2")
+API_KEY = os.getenv("API_KEY", "")
 
 
-def call_ai_api(prompt: str, system_prompt: str = None, max_tokens: int = 2000) -> str:
-    """调用ModelArts Studio API"""
-    if not API_URL or not API_KEY or not MODEL_NAME:
-        return "错误：API配置不完整，请检查环境变量设置。"
-
-    headers = {
-        "Content-Type": "application/json",
-        "Authorization": f"Bearer {API_KEY}"
+# 国家和地区数据
+COUNTRIES_REGIONS = {
+    "中国": {
+        "北京": ["故宫", "天安门广场", "长城", "颐和园", "天坛", "南锣鼓巷", "什刹海"],
+        "上海": ["外滩", "东方明珠", "南京路", "豫园", "迪士尼乐园", "田子坊"],
+        "广州": ["广州塔", "白云山", "陈家祠", "沙面岛", "长隆旅游度假区"],
+        "成都": ["大熊猫基地", "宽窄巷子", "锦里", "武侯祠", "都江堰", "青城山"],
+        "西安": ["兵马俑", "大雁塔", "古城墙", "回民街", "华清池", "大唐芙蓉园"],
+        "杭州": ["西湖", "灵隐寺", "雷峰塔", "宋城", "千岛湖", "西溪湿地"],
+        "三亚": ["亚龙湾", "天涯海角", "南山寺", "蜈支洲岛", "亚特兰蒂斯"],
+        "重庆": ["洪崖洞", "解放碑", "磁器口", "长江索道", "武隆天坑", "大足石刻"],
+        "桂林": ["漓江", "象鼻山", "阳朔西街", "龙脊梯田", "遇龙河"],
+        "厦门": ["鼓浪屿", "曾厝垵", "南普陀寺", "环岛路", "中山路"]
+    },
+    "日本": {
+        "东京": ["东京塔", "浅草寺", "秋叶原", "银座", "新宿", "迪士尼乐园", "涩谷"],
+        "大阪": ["大阪城", "道顿堀", "心斋桥", "环球影城", "奈良公园"],
+        "京都": ["清水寺", "金阁寺", "伏见稻荷大社", "岚山", "二条城"],
+        "北海道": ["小樽运河", "札幌雪祭", "函馆夜景", "富良野花田"]
+    },
+    "韩国": {
+        "首尔": ["景福宫", "明洞", "弘大", "江南", "南山塔", "东大门"],
+        "釜山": ["海云台", "甘川文化村", "札嘎其市场", "梵鱼寺"],
+        "济州岛": ["汉拿山", "城山日出峰", "牛岛", "涉地可支"]
+    },
+    "泰国": {
+        "曼谷": ["大皇宫", "玉佛寺", "考山路", "湄南河", "唐人街"],
+        "清迈": ["素贴寺", "宁曼路", "清迈古城", "周末夜市"],
+        "普吉岛": ["芭东海滩", "普吉镇", "卡伦海滩", "皮皮岛"]
+    },
+    "新加坡": {
+        "新加坡市": ["滨海湾花园", "鱼尾狮", "圣淘沙", "乌节路", "牛车水", "克拉码头"]
+    },
+    "马来西亚": {
+        "吉隆坡": ["双子塔", "独立广场", "茨厂街", "黑风洞", "云顶高原"],
+        "槟城": ["乔治市街头艺术", "槟城山", "极乐寺", "巴都丁宜海滩"],
+        "沙巴": ["京那巴鲁山", "海豚岛", "仙本那", "东姑阿都拉曼海洋公园"]
+    },
+    "越南": {
+        "河内": ["还剑湖", "胡志明纪念堂", "三十六行街", "文庙"],
+        "胡志明市": ["统一宫", "中央邮局", "圣母大教堂", "滨城市场"],
+        "岘港": ["美溪海滩", "会安古镇", "巴拿山", "五行山"]
+    },
+    "美国": {
+        "纽约": ["自由女神像", "时代广场", "中央公园", "帝国大厦", "大都会博物馆"],
+        "洛杉矶": ["好莱坞", "迪士尼乐园", "环球影城", "圣莫尼卡海滩", "比佛利山庄"],
+        "旧金山": ["金门大桥", "渔人码头", "九曲花街", "恶魔岛", "硅谷"]
+    },
+    "法国": {
+        "巴黎": ["埃菲尔铁塔", "卢浮宫", "凯旋门", "香榭丽舍大街", "圣母院", "蒙马特高地"]
+    },
+    "英国": {
+        "伦敦": ["大本钟", "伦敦眼", "白金汉宫", "大英博物馆", "塔桥", "海德公园"]
+    },
+    "澳大利亚": {
+        "悉尼": ["悉尼歌剧院", "海港大桥", "邦迪海滩", "达令港", "蓝山"],
+        "墨尔本": ["大洋路", "菲利普岛", "墨尔本CBD", "皇家植物园"]
     }
+}
 
-    messages = []
-    if system_prompt:
-        messages.append({"role": "system", "content": system_prompt})
-    messages.append({"role": "user", "content": prompt})
-
-    payload = {
-        "model": MODEL_NAME,
-        "messages": messages,
-        "temperature": 0.7,
-        "max_tokens": max_tokens
-    }
-
-    try:
-        response = requests.post(API_URL, headers=headers, json=payload, timeout=60)
-        response.raise_for_status()
-        result = response.json()
-        return result["choices"][0]["message"]["content"]
-    except requests.exceptions.Timeout:
-        return "错误：API请求超时，请稍后重试。"
-    except requests.exceptions.RequestException as e:
-        return f"错误：API请求失败 - {str(e)}"
-    except (KeyError, IndexError) as e:
-        return f"错误：API响应格式异常 - {str(e)}"
+# 旅行风格选项
+TRAVEL_STYLES = [
+    "人文历史",
+    "自然风光",
+    "美食探索",
+    "亲子休闲",
+    "浪漫蜜月",
+    "户外探险",
+    "城市购物",
+    "宗教文化",
+    "摄影采风",
+    "深度体验",
+    "休闲度假",
+    "其他"
+]
 
 
-def fetch_countries_from_ai():
-    """通过AI获取世界上所有热门旅游国家列表"""
-    global countries_cache
+class TravelAssistant:
+    """春节旅游计划AI助手类"""
     
-    if countries_cache is not None:
-        return countries_cache
-
-    prompt = """请列出世界上所有热门旅游国家，要求：
-1. 按照热门程度排序，列出至少30个国家
-2. 只输出国家名称，用中文逗号分隔
-3. 不要输出任何其他内容，不要编号，不要解释
-
-输出格式示例：中国,日本,韩国,泰国,美国,法国..."""
-
-    system_prompt = "你是一位专业的旅游顾问，熟悉世界各地的旅游信息。请严格按照要求输出，只输出国家名称列表。"
-
-    result = call_ai_api(prompt, system_prompt, max_tokens=1000)
+    def __init__(self):
+        self.api_url = API_URL
+        self.model_name = MODEL_NAME
+        self.api_key = API_KEY
+        
+    def call_ai_api(self, prompt: str, system_prompt: str = None) -> str:
+        """
+        调用ModelArts Studio API
+        
+        Args:
+            prompt: 用户提示词
+            system_prompt: 系统提示词（可选）
+            
+        Returns:
+            AI返回的响应文本
+        """
+        try:
+            headers = {
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self.api_key}"
+            }
+            
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+            
+            payload = {
+                "model": self.model_name,
+                "messages": messages,
+                "temperature": 0.7,
+                "max_tokens": 2000
+            }
+            
+            response = requests.post(
+                self.api_url,
+                headers=headers,
+                json=payload,
+                timeout=60
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                return result.get("choices", [{}])[0].get("message", {}).get("content", "")
+            else:
+                return f"API调用失败: {response.status_code} - {response.text}"
+                
+        except Exception as e:
+            return f"调用AI服务时发生错误: {str(e)}"
     
-    # 解析结果
-    if result.startswith("错误"):
-        # 如果API调用失败，返回默认列表
-        countries_cache = ["中国", "日本", "韩国", "泰国", "新加坡", "马来西亚", "越南", 
-                          "印度尼西亚", "法国", "意大利", "英国", "美国", "澳大利亚", 
-                          "阿联酋", "瑞士", "德国", "西班牙", "希腊", "土耳其", "埃及"]
-    else:
-        # 清理并解析结果
-        result = result.strip()
-        # 移除可能的编号和多余字符
-        result = re.sub(r'[\d\.\、\n]+', '', result)
-        countries = [c.strip() for c in result.split(',') if c.strip()]
-        countries_cache = countries if countries else ["中国", "日本", "韩国"]
+    def get_weather_info(self, location: str, days: int = 7) -> str:
+        """
+        获取天气信息（模拟数据，实际可接入真实天气API）
+        
+        Args:
+            location: 地点名称
+            days: 查询天数
+            
+        Returns:
+            天气信息文本
+        """
+        prompt = f"""请为{location}生成未来{days}天的天气预报信息。
+注意：这是春节旅游期间，请根据该地点的气候特点给出合理的天气预测。
+请以表格形式展示，包含日期、天气状况、温度范围（最高温/最低温）、风力风向、穿衣建议等。
+日期从明天开始计算。"""
+        
+        system_prompt = """你是一个专业的天气预报助手，请根据地点的气候特点和季节特点，生成合理详细的天气预报信息。"""
+        
+        return self.call_ai_api(prompt, system_prompt)
     
-    return countries_cache
+    def get_attraction_info(self, attraction: str) -> Tuple[str, str]:
+        """
+        获取景点介绍信息和天气
+        
+        Args:
+            attraction: 景点名称
+            
+        Returns:
+            (景点介绍, 天气信息)
+        """
+        # 获取景点介绍
+        prompt = f"""请详细介绍景点"{attraction}"，包括以下内容：
+1. 景点位置和基本信息
+2. 历史文化背景
+3. 主要特色和看点
+4. 最佳游览时间
+5. 游玩建议和注意事项
+6. 推荐游玩时长
+7. 门票信息（如有）
+8. 周边配套设施
 
-
-def fetch_cities_from_ai(country: str):
-    """通过AI获取指定国家的热门旅游城市列表"""
-    global cities_cache
+请用清晰的结构化方式呈现，便于阅读。"""
+        
+        system_prompt = """你是一个专业的旅游景点介绍专家，请提供准确、详细、实用的景点介绍信息。"""
+        
+        attraction_info = self.call_ai_api(prompt, system_prompt)
+        
+        # 获取天气信息
+        weather_info = self.get_weather_info(attraction, days=7)
+        
+        return attraction_info, weather_info
     
-    if country in cities_cache:
-        return cities_cache[country]
+    def recommend_attractions(self, country: str, city: str = None) -> Tuple[str, str]:
+        """
+        推荐目的地知名景点和天气
+        
+        Args:
+            country: 国家
+            city: 城市/地区
+            
+        Returns:
+            (景点推荐, 天气信息)
+        """
+        location = f"{country}{city}" if city else country
+        
+        prompt = f"""请推荐{location}春节期间值得游览的知名景点，包括以下内容：
+1. 推荐至少5-10个必游景点
+2. 每个景点的简要介绍
+3. 景点之间的游览顺序建议
+4. 春节期间的特殊活动或氛围
+5. 适合的游览天数建议
+6. 交通方式建议
 
-    prompt = f"""请列出{country}所有热门旅游城市，要求：
-1. 按照热门程度排序，列出至少5-15个城市或地区
-2. 只输出城市名称，用中文逗号分隔
-3. 不要输出任何其他内容，不要编号，不要解释
-
-输出格式示例：北京,上海,广州,深圳,成都..."""
-
-    system_prompt = "你是一位专业的旅游顾问，熟悉世界各地的旅游信息。请严格按照要求输出，只输出城市名称列表。"
-
-    result = call_ai_api(prompt, system_prompt, max_tokens=500)
+请用清晰的结构化方式呈现，便于游客参考。"""
+        
+        system_prompt = """你是一个专业的旅游规划师，熟悉全球各地的旅游景点，能够为游客提供实用的景点推荐建议。"""
+        
+        attractions = self.call_ai_api(prompt, system_prompt)
+        weather = self.get_weather_info(location, days=7)
+        
+        return attractions, weather
     
-    # 解析结果
-    if result.startswith("错误"):
-        # 如果API调用失败，返回空列表
-        cities_cache[country] = []
-    else:
-        # 清理并解析结果
-        result = result.strip()
-        # 移除可能的编号和多余字符
-        result = re.sub(r'[\d\.\、\n]+', '', result)
-        cities = [c.strip() for c in result.split(',') if c.strip()]
-        cities_cache[country] = cities if cities else []
+    def plan_route(self, start: str, end: str, transport_type: str) -> str:
+        """
+        规划出行交通路线
+        
+        Args:
+            start: 起点
+            end: 终点
+            transport_type: 交通方式（自驾/公共交通）
+            
+        Returns:
+            路线规划信息
+        """
+        if transport_type == "自驾":
+            prompt = f"""请为从{start}到{end}的自驾路线提供详细的规划建议，包括：
+1. 推荐的行驶路线和高速公路
+2. 预计行驶距离和耗时
+3. 沿途主要休息点和加油站
+4. 路况注意事项和驾驶建议
+5. 可能的替代路线
+6. 沿途值得停留的景点或服务区
+7. 春节期间高速免费政策和限行提醒（如适用）
+8. 停车建议
+
+请提供实用的自驾出行建议。"""
+            
+            system_prompt = """你是一个专业的自驾路线规划师，能够为用户提供详细、实用的自驾出行建议。"""
+            
+        else:  # 公共交通
+            prompt = f"""请为从{start}到{end}的公共交通出行提供详细的规划建议，包括所有可能的交通方式：
+1. 飞机：推荐航班、机场信息、飞行时长、价格区间
+2. 火车/高铁：推荐车次、车站信息、运行时长、票价区间
+3. 长途汽车：推荐班次、车站信息、运行时长、票价区间
+4. 其他可能的交通方式（轮渡等）
+5. 各种交通方式的优缺点对比
+6. 推荐的最佳出行方案
+7. 春节期间的购票提醒和注意事项
+8. 城市内交通接驳建议
+
+请提供全面的公共交通出行方案。"""
+            
+            system_prompt = """你是一个专业的公共交通出行规划师，熟悉各种交通方式，能够为用户提供全面的出行方案。"""
+        
+        return self.call_ai_api(prompt, system_prompt)
     
-    return cities_cache[country]
+    def plan_itinerary(self, destination: str, days: int, travel_style: str) -> str:
+        """
+        规划每日游玩行程
+        
+        Args:
+            destination: 目的地
+            days: 游玩天数
+            travel_style: 游玩风格
+            
+        Returns:
+            每日行程规划
+        """
+        prompt = f"""请为{destination}制定一个{days}天的详细行程规划，游玩风格为：{travel_style}。
+
+要求：
+1. 每天的行程安排要合理，不要过于紧凑或松散
+2. 每天上午、下午、晚上的具体活动安排
+3. 包含景点游览、美食推荐、购物等
+4. 考虑景点之间的地理位置，优化路线
+5. 提供交通方式建议
+6. 包含用餐推荐
+7. 每天的预算预估
+8. 特别注意事项
+9. 春节期间的特色活动或氛围
+10. 根据"{travel_style}"风格重点突出相关内容
+
+请按天详细列出，便于执行。如果天数较长，可以安排返程或休息日。"""
+        
+        system_prompt = """你是一个专业的行程规划师，能够根据用户的需求和喜好，制定详细、实用、个性化的旅游行程计划。"""
+        
+        return self.call_ai_api(prompt, system_prompt)
 
 
-def load_countries_on_start():
-    """应用启动时加载国家列表"""
-    countries = fetch_countries_from_ai()
-    return gr.Dropdown(choices=countries, value=None)
+# 全局实例
+assistant = TravelAssistant()
 
 
-def update_regions(country, loading_status):
+def update_regions(country: str):
     """根据选择的国家更新地区下拉框"""
+    # 只有当选择的国家在预定义列表中时才更新地区下拉框
+    # 如果用户手动输入了其他内容，保持地区下拉框不变
+    if country and country in COUNTRIES_REGIONS:
+        regions = list(COUNTRIES_REGIONS[country].keys())
+        return gr.Dropdown(choices=regions, value=regions[0] if regions else None)
+    # 如果不在列表中或为空，返回空的地区列表，但不强制重置
+    return gr.Dropdown(choices=[], value=None, allow_custom_value=True)
+
+
+def recommend_attractions_handler(country: str, city: str) -> Tuple[str, str]:
+    """处理景点推荐请求"""
     if not country:
-        return gr.Dropdown(choices=[], value=None, interactive=True), loading_status
+        return "请先选择国家", ""
     
-    # 更新加载状态
-    status_html = f'<span class="loading-status">正在获取 {country} 的热门城市...</span>'
+    attractions, weather = assistant.recommend_attractions(country, city if city else None)
+    return attractions, weather
+
+
+def get_attraction_info_handler(attraction: str) -> Tuple[str, str]:
+    """处理景点查询请求"""
+    if not attraction:
+        return "请输入景点名称", ""
     
-    # 获取城市列表
-    cities = fetch_cities_from_ai(country)
+    info, weather = assistant.get_attraction_info(attraction)
+    return info, weather
+
+
+def plan_route_handler(start: str, end: str, transport_type: str) -> str:
+    """处理路线规划请求"""
+    if not start or not end:
+        return "请输入起点和终点"
     
-    if cities:
-        status_html = f'<span class="loading-status">已加载 {country} 的 {len(cities)} 个热门城市（也可手动输入）</span>'
-        return gr.Dropdown(choices=cities, value=None, interactive=True), status_html
-    else:
-        status_html = f'<span class="loading-status">请手动输入 {country} 的城市名称</span>'
-        return gr.Dropdown(choices=[], value=None, interactive=True), status_html
+    return assistant.plan_route(start, end, transport_type)
 
 
-def recommend_attractions(country, region):
-    """AI推荐景点和天气信息"""
-    if not country or not region:
-        return "请先选择或输入国家和地区。"
-
-    prompt = f"""请为春节旅游推荐{country}{region}的知名景点。
-要求：
-1. 列出3-5个最值得游览的景点，每个景点简要说明特色
-2. 预测{region}未来7天的大致天气情况（温度范围、是否可能下雨等）
-3. 给出春节期间游览的注意事项和建议
-
-请用清晰的格式输出，使用中文。"""
-
-    system_prompt = "你是一位专业的旅游顾问，熟悉世界各地的旅游景点和气候特点。请提供详细、实用的旅游建议。"
-
-    return call_ai_api(prompt, system_prompt)
+def plan_itinerary_handler(destination: str, days: int, travel_style: str) -> str:
+    """处理行程规划请求"""
+    if not destination or not days:
+        return "请输入目的地和游玩天数"
+    
+    return assistant.plan_itinerary(destination, days, travel_style)
 
 
-def get_attraction_info(attraction_name):
-    """获取景点介绍和天气信息"""
-    if not attraction_name or attraction_name.strip() == "":
-        return "请输入景点名称。"
-
-    prompt = f"""请介绍景点：{attraction_name}
-要求：
-1. 详细介绍该景点的历史背景、主要特色、游览亮点
-2. 推荐最佳游览时间和游览路线
-3. 预测该景点所在地未来7天的大致天气情况
-4. 春节期间游览的特别提示
-
-请用清晰的格式输出，使用中文。"""
-
-    system_prompt = "你是一位专业的旅游顾问，熟悉世界各地的旅游景点。请提供详细、准确的景点介绍和实用建议。"
-
-    return call_ai_api(prompt, system_prompt)
-
-
-def plan_route(start_point, end_point, transport_mode):
-    """规划出行路线"""
-    if not start_point or not end_point or not transport_mode:
-        return "请填写完整的出发地、目的地和交通方式。"
-
-    if start_point.strip() == end_point.strip():
-        return "出发地和目的地不能相同。"
-
-    prompt = f"""请规划从{start_point}到{end_point}的{transport_mode}出行路线。
-
-要求：
-1. 如果是自驾：
-   - 推荐最佳行驶路线
-   - 预估行驶时间和距离
-   - 途经的主要城市或服务区
-   - 油费/过路费预估
-   - 自驾注意事项
-
-2. 如果是公共交通：
-   - 推荐最佳的交通组合方式（飞机/火车/高铁/长途汽车）
-   - 各段行程的时间和费用预估
-   - 换乘站点和注意事项
-   - 购票建议
-
-3. 春节期间出行的特别提示
-
-请用清晰的格式输出，使用中文。"""
-
-    system_prompt = "你是一位专业的出行规划师，熟悉各种交通方式和路线规划。请提供详细、实用的出行建议。"
-
-    return call_ai_api(prompt, system_prompt)
-
-
-# 创建Gradio界面
-with gr.Blocks(
-    title="春节旅游计划AI小助手",
-    theme=gr.themes.Soft(
-        primary_hue="red",
-        secondary_hue="orange",
-        neutral_hue="slate",
-    ),
-    css="""
+def create_interface():
+    """创建Gradio界面"""
+    
+    # 自定义CSS样式
+    custom_css = """
     .gradio-container {
-        background: linear-gradient(135deg, #fff5f5 0%, #fff8e1 100%);
+        font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif !important;
     }
-    .title-container {
+    
+    .header {
         text-align: center;
-        padding: 20px;
-        background: linear-gradient(90deg, #c62828, #d84315);
+        padding: 30px 20px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         border-radius: 15px;
-        margin-bottom: 20px;
-        box-shadow: 0 4px 15px rgba(198, 40, 40, 0.3);
+        margin-bottom: 25px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
     }
-    .title-container h1 {
+    
+    .header h1 {
         color: white;
+        font-size: 2.5em;
         margin: 0;
-        font-size: 2.2em;
-        text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        font-weight: 700;
+        text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
     }
-    .title-container p {
-        color: #ffecb3;
-        margin: 10px 0 0 0;
+    
+    .header p {
+        color: rgba(255, 255, 255, 0.95);
         font-size: 1.1em;
+        margin-top: 10px;
     }
-    .section-card {
-        background: white;
-        border-radius: 15px;
+    
+    .tab-content {
         padding: 20px;
-        margin-bottom: 15px;
-        box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-        border: 1px solid #ffcdd2;
     }
-    .btn-primary {
-        background: linear-gradient(90deg, #c62828, #d84315) !important;
-        border: none !important;
-        color: white !important;
-        font-weight: bold !important;
-    }
-    .btn-primary:hover {
-        background: linear-gradient(90deg, #b71c1c, #bf360c) !important;
-    }
-    .loading-status {
-        color: #666;
-        font-size: 0.9em;
-        padding: 5px 10px;
-        background: #fff3e0;
-        border-radius: 5px;
-        margin-top: 5px;
-    }
-    .output-markdown {
-        background: #fafafa;
+    
+    .info-box {
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
         border-radius: 10px;
         padding: 15px;
-        min-height: 300px;
-        border: 1px solid #e0e0e0;
+        margin: 15px 0;
     }
-    .output-markdown h1, .output-markdown h2, .output-markdown h3 {
-        color: #c62828;
+    
+    .result-box {
+        background: #ffffff;
+        border: 2px solid #e0e0e0;
+        border-radius: 10px;
+        padding: 20px;
         margin-top: 15px;
+        max-height: 500px;
+        overflow-y: auto;
     }
-    .output-markdown ul, .output-markdown ol {
-        padding-left: 20px;
+    
+    .result-box::-webkit-scrollbar {
+        width: 8px;
     }
-    .output-markdown li {
-        margin: 8px 0;
+    
+    .result-box::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 4px;
     }
-    .output-markdown strong {
-        color: #d84315;
+    
+    .result-box::-webkit-scrollbar-thumb {
+        background: #888;
+        border-radius: 4px;
+    }
+    
+    .result-box::-webkit-scrollbar-thumb:hover {
+        background: #555;
+    }
+    
+    .btn-primary {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+        border: none !important;
+        color: white !important;
+        font-weight: 600 !important;
+        padding: 12px 30px !important;
+        border-radius: 25px !important;
+        transition: all 0.3s ease !important;
+    }
+    
+    .btn-primary:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+    }
+    
+    .input-box {
+        border-radius: 10px !important;
+    }
+    
+    .dropdown {
+        border-radius: 10px !important;
+    }
+    
+    .label {
+        font-weight: 600 !important;
+        color: #333 !important;
     }
     """
-) as demo:
+    
+    with gr.Blocks(css=custom_css, title="春节旅游计划AI助手") as app:
+        # 页面标题
+        gr.HTML("""
+        <div class="header">
+            <h1>🧧 春节旅游计划AI助手 🧧</h1>
+            <p>智能规划您的春节假期 · 探索精彩世界</p>
+        </div>
+        """)
+        
+        with gr.Tabs():
+            # Tab 1: 目的地推荐
+            with gr.TabItem("🌍 目的地推荐", id=1):
+                gr.Markdown("### 选择您的旅行目的地，获取景点推荐和天气信息")
+                
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        country_dropdown = gr.Dropdown(
+                            choices=list(COUNTRIES_REGIONS.keys()),
+                            label="选择国家",
+                            info="选择您想去的旅游国家，也支持手动输入",
+                            interactive=True,
+                            allow_custom_value=True
+                        )
 
-    # 标题
-    gr.HTML("""
-    <div class="title-container">
-        <h1>🎊 春节旅游计划AI小助手 🎊</h1>
-        <p>智能规划您的春节假期，让旅途更加精彩！</p>
-    </div>
-    """)
+                        city_dropdown = gr.Dropdown(
+                            choices=[],
+                            label="选择城市/地区",
+                            info="选择该国家的城市或地区，也支持手动输入",
+                            interactive=True,
+                            allow_custom_value=True
+                        )
 
-    # 功能1：目的地推荐
-    with gr.Tab("🌍 目的地推荐"):
-        with gr.Column():
-            gr.HTML('<div class="section-card">')
-            gr.Markdown("### 选择您的旅游目的地")
-            gr.Markdown("选择国家和城市，AI将为您推荐当地知名景点和天气信息\n\n💡 国家和城市列表由AI动态生成，首次加载可能需要几秒钟\n\n✏️ **您也可以直接输入小众国家或城市名称**")
-
-            with gr.Row():
-                country_dropdown = gr.Dropdown(
-                    choices=[],
-                    label="选择或输入国家（支持手动输入）",
-                    interactive=True,
-                    scale=1,
-                    allow_custom_value=True
+                        recommend_btn = gr.Button("🔍 获取推荐", variant="primary", size="lg")
+                    
+                    with gr.Column(scale=2):
+                        attractions_output = gr.Markdown(
+                            label="景点推荐",
+                            value="请选择国家和城市，然后点击获取推荐"
+                        )
+                        
+                        weather_output = gr.Markdown(
+                            label="天气预报",
+                            value="天气信息将在这里显示"
+                        )
+                
+                # 联动事件 - 当国家改变时更新城市列表
+                country_dropdown.change(
+                    fn=update_regions,
+                    inputs=country_dropdown,
+                    outputs=city_dropdown
                 )
-                refresh_countries_btn = gr.Button("🔄 刷新列表", size="sm", scale=0)
-
-            with gr.Row():
-                region_dropdown = gr.Dropdown(
-                    choices=[],
-                    label="选择或输入地区/城市（支持手动输入）",
-                    interactive=True,
-                    scale=1,
-                    allow_custom_value=True
+                
+                recommend_btn.click(
+                    fn=recommend_attractions_handler,
+                    inputs=[country_dropdown, city_dropdown],
+                    outputs=[attractions_output, weather_output]
                 )
-                refresh_cities_btn = gr.Button("🔄 刷新城市", size="sm", scale=0)
-
-            loading_status = gr.HTML(
-                value='<span class="loading-status">正在加载国家列表...</span>',
-                visible=True
-            )
-
-            recommend_btn = gr.Button("🎯 获取推荐", variant="primary", elem_classes=["btn-primary"])
-            gr.HTML('</div>')
-
-            gr.HTML('<div class="section-card">')
-            recommend_output = gr.Markdown(
-                label="AI推荐结果",
-                elem_classes=["output-markdown"]
-            )
-            gr.HTML('</div>')
-
-            # 刷新国家列表按钮事件
-            def refresh_countries():
-                global countries_cache
-                countries_cache = None
-                countries = fetch_countries_from_ai()
-                return gr.Dropdown(choices=countries, value=None), f'<span class="loading-status">已加载 {len(countries)} 个热门国家</span>'
-
-            refresh_countries_btn.click(
-                fn=refresh_countries,
-                outputs=[country_dropdown, loading_status]
-            )
-
-            # 刷新城市列表按钮事件
-            def refresh_cities(country):
-                if not country:
-                    return gr.Dropdown(choices=[], value=None), '<span class="loading-status">请先选择或输入国家</span>'
-                global cities_cache
-                if country in cities_cache:
-                    del cities_cache[country]
-                cities = fetch_cities_from_ai(country)
-                if cities:
-                    return gr.Dropdown(choices=cities, value=None), f'<span class="loading-status">已加载 {country} 的 {len(cities)} 个热门城市</span>'
-                return gr.Dropdown(choices=[], value=None), f'<span class="loading-status">获取 {country} 的城市失败，请手动输入</span>'
-
-            refresh_cities_btn.click(
-                fn=refresh_cities,
-                inputs=[country_dropdown],
-                outputs=[region_dropdown, loading_status]
-            )
-
-            # 国家选择联动地区
-            country_dropdown.change(
-                fn=update_regions,
-                inputs=[country_dropdown, loading_status],
-                outputs=[region_dropdown, loading_status]
-            )
-
-            # 推荐按钮事件
-            recommend_btn.click(
-                fn=recommend_attractions,
-                inputs=[country_dropdown, region_dropdown],
-                outputs=[recommend_output]
-            )
-
-    # 功能2：景点查询
-    with gr.Tab("🏛️ 景点查询"):
-        with gr.Column():
-            gr.HTML('<div class="section-card">')
-            gr.Markdown("### 查询景点信息")
-            gr.Markdown("输入景点名称，AI将为您详细介绍并提供天气信息")
-
-            attraction_input = gr.Textbox(
-                label="输入景点名称",
-                placeholder="例如：故宫、埃菲尔铁塔、富士山...",
-                lines=1
-            )
-
-            query_btn = gr.Button("🔍 查询景点", variant="primary", elem_classes=["btn-primary"])
-            gr.HTML('</div>')
-
-            gr.HTML('<div class="section-card">')
-            attraction_output = gr.Markdown(
-                label="景点介绍",
-                elem_classes=["output-markdown"]
-            )
-            gr.HTML('</div>')
-
-            query_btn.click(
-                fn=get_attraction_info,
-                inputs=[attraction_input],
-                outputs=[attraction_output]
-            )
-
-    # 功能3：路线规划
-    with gr.Tab("🚗 路线规划"):
-        with gr.Column():
-            gr.HTML('<div class="section-card">')
-            gr.Markdown("### 规划出行路线")
-            gr.Markdown("输入出发地、目的地和交通方式，AI将为您规划最佳路线")
-
-            with gr.Row():
-                start_input = gr.Textbox(
-                    label="出发地",
-                    placeholder="例如：北京、上海虹桥机场...",
-                    scale=1
+            
+            # Tab 2: 景点查询
+            with gr.TabItem("🏛️ 景点查询", id=2):
+                gr.Markdown("### 输入景点名称，获取详细介绍和天气信息")
+                
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        attraction_input = gr.Textbox(
+                            label="景点名称",
+                            placeholder="例如：故宫、埃菲尔铁塔、富士山...",
+                            info="支持手动输入任意景点名称"
+                        )
+                        
+                        attraction_query_btn = gr.Button("🔍 查询景点", variant="primary", size="lg")
+                    
+                    with gr.Column(scale=2):
+                        attraction_info_output = gr.Markdown(
+                            label="景点介绍",
+                            value="景点介绍信息将在这里显示"
+                        )
+                        
+                        attraction_weather_output = gr.Markdown(
+                            label="天气信息",
+                            value="天气信息将在这里显示"
+                        )
+                
+                attraction_query_btn.click(
+                    fn=get_attraction_info_handler,
+                    inputs=[attraction_input],
+                    outputs=[attraction_info_output, attraction_weather_output]
                 )
-                end_input = gr.Textbox(
-                    label="目的地",
-                    placeholder="例如：三亚、杭州西湖...",
-                    scale=1
+            
+            # Tab 3: 交通路线规划
+            with gr.TabItem("🚗 交通路线规划", id=3):
+                gr.Markdown("### 规划您的出行路线")
+                
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        start_point = gr.Textbox(
+                            label="出发地",
+                            placeholder="例如：北京、上海..."
+                        )
+                        
+                        end_point = gr.Textbox(
+                            label="目的地",
+                            placeholder="例如：三亚、成都..."
+                        )
+                        
+                        transport_type = gr.Radio(
+                            choices=["自驾", "公共交通"],
+                            value="自驾",
+                            label="交通方式",
+                            info="选择您的出行方式"
+                        )
+                        
+                        route_btn = gr.Button("🗺️ 规划路线", variant="primary", size="lg")
+                    
+                    with gr.Column(scale=2):
+                        route_output = gr.Markdown(
+                            label="路线规划",
+                            value="路线规划信息将在这里显示"
+                        )
+                
+                route_btn.click(
+                    fn=plan_route_handler,
+                    inputs=[start_point, end_point, transport_type],
+                    outputs=[route_output]
                 )
+            
+            # Tab 4: 行程规划
+            with gr.TabItem("📅 行程规划", id=4):
+                gr.Markdown("### 制定您的详细游玩行程")
+                
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        itinerary_destination = gr.Textbox(
+                            label="目的地",
+                            placeholder="例如：北京、巴黎、东京..."
+                        )
+                        
+                        itinerary_days = gr.Slider(
+                            minimum=1,
+                            maximum=15,
+                            value=3,
+                            step=1,
+                            label="游玩天数",
+                            info="选择您的游玩天数"
+                        )
+                        
+                        itinerary_style = gr.Dropdown(
+                            choices=TRAVEL_STYLES,
+                            value="人文历史",
+                            label="游玩风格",
+                            info="选择您偏好的游玩风格"
+                        )
+                        
+                        custom_style = gr.Textbox(
+                            label="自定义风格（可选）",
+                            placeholder="如果上述选项不合适，可以手动输入...",
+                            info="手动输入您的游玩偏好"
+                        )
+                        
+                        itinerary_btn = gr.Button("📋 生成行程", variant="primary", size="lg")
+                    
+                    with gr.Column(scale=2):
+                        itinerary_output = gr.Markdown(
+                            label="行程规划",
+                            value="行程规划信息将在这里显示"
+                        )
+                
+                itinerary_btn.click(
+                    fn=plan_itinerary_handler,
+                    inputs=[itinerary_destination, itinerary_days, itinerary_style],
+                    outputs=[itinerary_output]
+                )
+        
+        # 页脚
+        gr.HTML("""
+        <div style="text-align: center; padding: 20px; color: #666; margin-top: 30px;">
+            <p>💡 提示：所有功能均由AI驱动，建议结合实际情况进行调整</p>
+            <p style="margin-top: 10px;">Powered by ModelArts Studio | 春节旅游计划AI助手</p>
+        </div>
+        """)
+    
+    return app
 
-            transport_dropdown = gr.Dropdown(
-                choices=TRANSPORT_MODES,
-                label="交通方式",
-                interactive=True
-            )
 
-            plan_btn = gr.Button("🗺️ 规划路线", variant="primary", elem_classes=["btn-primary"])
-            gr.HTML('</div>')
-
-            gr.HTML('<div class="section-card">')
-            route_output = gr.Markdown(
-                label="路线规划结果",
-                elem_classes=["output-markdown"]
-            )
-            gr.HTML('</div>')
-
-            plan_btn.click(
-                fn=plan_route,
-                inputs=[start_input, end_input, transport_dropdown],
-                outputs=[route_output]
-            )
-
-    # 底部信息
-    gr.HTML("""
-    <div style="text-align: center; padding: 20px; color: #666;">
-        <p>💡 提示：AI生成的内容仅供参考，实际出行请以官方信息为准</p>
-        <p>Powered by ModelArts Studio API</p>
-    </div>
-    """)
-
-    # 应用加载时初始化国家列表
-    demo.load(
-        fn=load_countries_on_start,
-        outputs=[country_dropdown]
-    )
-
-
-if __name__ == "__main__":
-    # 检查环境变量
-    if not API_URL or not MODEL_NAME or not API_KEY:
-        print("警告：API环境变量未完整设置，请检查以下环境变量：")
-        print("  - API_URL")
-        print("  - MODEL_NAME")
-        print("  - API_KEY")
-
+def main():
+    """主函数"""
+    print("=" * 60)
+    print("春节旅游计划AI助手")
+    print("=" * 60)
+    print(f"API URL: {API_URL}")
+    print(f"Model: {MODEL_NAME}")
+    print(f"API Key: {'已设置' if API_KEY else '未设置'}")
+    print("=" * 60)
+    
+    if not API_KEY:
+        print("⚠️  警告：API_KEY未设置，请确保环境变量已配置")
+    
+    # 创建界面
+    app = create_interface()
+    
     # 启动应用
-    demo.launch(
-        server_name="0.0.0.0",
+    app.launch(
+        server_name="127.0.0.1",
         server_port=7860,
         share=False,
         show_error=True
     )
+
+
+if __name__ == "__main__":
+    main()
