@@ -12,6 +12,7 @@ import json
 from datetime import datetime, timedelta
 from functools import lru_cache
 from typing import Dict, List, Optional, Tuple
+import re
 
 # 从环境变量获取API配置
 API_URL = os.getenv("API_URL")
@@ -107,6 +108,57 @@ class TravelAssistant:
         self.model_name = MODEL_NAME
         self.api_key = API_KEY
 
+    def post_process_response(self, response_text: str) -> str:
+        """
+        对AI返回的响应进行后处理，根据上下文统一替换雨具相关词汇
+
+        Args:
+            response_text: AI返回的原始文本
+
+        Returns:
+            处理后的文本
+        """
+        # 1. 自驾出行 + 台风/恶劣天气场景：替换为"带上雨衣雨披"
+        # 匹配自驾相关的台风、恶劣天气提示
+        driving_typhoon_pattern = r'(自驾|驾驶|车距|减速|行驶).*?(台风|暴雨|暴雪|恶劣天气|大暴雨|特大暴雨|强降雨).*?建议您(.*?)雨(具|伞|衣|披)'
+        response_text = re.sub(driving_typhoon_pattern, r'\1\2，建议您带上雨衣雨披', response_text)
+
+        # 2. 台风、恶劣天气(暴雨、暴雪等)场景：替换为"穿雨衣雨披"
+        # 匹配台风、暴雨、暴雪等恶劣天气的提示
+        typhoon_pattern = r'(台风|暴雨|暴雪|恶劣天气|大暴雨|特大暴雨|强降雨).*?建议您(.*?)雨(具|伞|衣|披)'
+        response_text = re.sub(typhoon_pattern, r'\1，建议您穿雨衣雨披', response_text)
+
+        # 3. 自驾出行 + 普通雨天场景：替换为"带上雨具"
+        # 匹配自驾相关的普通雨天提示
+        driving_rain_pattern = r'(自驾|驾驶|车距|减速|行驶).*?(降雨|下雨|小雨|中雨|大雨|雨天).*?建议您(.*?)雨(具|伞|衣|披)'
+        response_text = re.sub(driving_rain_pattern, r'\1\2，建议您带上雨具', response_text)
+
+        # 4. 其他雨天场景：替换为"带上雨具"
+        # 匹配普通雨天
+        rain_pattern = r'(降雨|下雨|小雨|中雨|大雨|雨天).*?建议您(.*?)雨(具|伞|衣|披)'
+        response_text = re.sub(rain_pattern, r'\1，建议您带上雨具', response_text)
+
+        # 去除重复表述
+        pattern = r'(建议.*?雨(具|衣披).*?)，.*?最好.*?雨(具|衣披)'
+        response_text = re.sub(pattern, r'\1', response_text)
+
+        # 去除连续重复的"雨衣雨披"或"雨具"
+        while '雨衣雨披和雨衣雨披' in response_text or '雨衣雨披、雨衣雨披' in response_text or '雨衣雨披，雨衣雨披' in response_text or '雨衣雨披,雨衣雨披' in response_text or '雨衣雨披与雨衣雨披' in response_text:
+            response_text = response_text.replace('雨衣雨披和雨衣雨披', '雨衣雨披')
+            response_text = response_text.replace('雨衣雨披、雨衣雨披', '雨衣雨披')
+            response_text = response_text.replace('雨衣雨披，雨衣雨披', '雨衣雨披')
+            response_text = response_text.replace('雨衣雨披,雨衣雨披', '雨衣雨披')
+            response_text = response_text.replace('雨衣雨披与雨衣雨披', '雨衣雨披')
+
+        while '雨具和雨具' in response_text or '雨具、雨具' in response_text or '雨具，雨具' in response_text or '雨具,雨具' in response_text or '雨具与雨具' in response_text:
+            response_text = response_text.replace('雨具和雨具', '雨具')
+            response_text = response_text.replace('雨具、雨具', '雨具')
+            response_text = response_text.replace('雨具，雨具', '雨具')
+            response_text = response_text.replace('雨具,雨具', '雨具')
+            response_text = response_text.replace('雨具与雨具', '雨具')
+
+        return response_text
+
     def call_ai_api(self, prompt: str, system_prompt: str = None) -> str:
         """
         调用ModelArts Studio API
@@ -146,7 +198,7 @@ class TravelAssistant:
             if response.status_code == 200:
                 result = response.json()
                 content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-                return content
+                return self.post_process_response(content)
             else:
                 return f"API调用失败: {response.status_code} - {response.text}"
 
@@ -171,8 +223,9 @@ class TravelAssistant:
 
 【重要提醒】
 如果预报中包含以下天气情况，请在天气预报后添加醒目的出行建议：
-- 雨天（小雨、中雨、大雨、暴雨等）：请添加"☔ 温馨提示：预计有降雨，建议您带好雨具，注意出行安全。"
-- 台风天气：请添加"🌀 温馨提示：预计有台风影响，建议您密切关注天气变化，做好防风防雨准备，必要时调整出行计划。"
+- 雨天（小雨、中雨、大雨等）：请添加"☔ 温馨提示：预计有降雨，建议您带上雨具，注意出行安全。"
+- 台风天气：请添加"🌀 温馨提示：预计有台风影响，建议您穿雨衣雨披，注意出行安全。"
+- 暴雨、暴雪等恶劣天气：请添加"⚠️ 温馨提示：预计有恶劣天气，建议您穿雨衣雨披，注意出行安全。"
 - 雪天：请添加"❄️ 温馨提示：预计有降雪，建议您携带防寒装备，注意保暖和防滑。"
 - 大风天气：请添加"💨 温馨提示：预计有大风，建议您注意防风，避免户外高空活动。"
 
@@ -312,11 +365,11 @@ class TravelAssistant:
        - 标注可能出现恶劣天气的路段
 
     17. 恶劣天气出行提醒（重要）：
-       - 雨天提醒：☔ 温馨提示：沿途预计有降雨，建议您带好雨具，注意保持安全车距，减速慢行，谨慎驾驶。
-       - 台风提醒：🌀 温馨提示：沿途预计有台风影响，建议您密切关注天气预警，必要时推迟出行或调整路线，避免在台风期间自驾。
+       - 雨天提醒：☔ 温馨提示：沿途预计有降雨，建议您带上雨具，注意保持安全车距，减速慢行，谨慎驾驶。
+       - 台风提醒：🌀 温馨提示：沿途预计有台风影响，建议您带上雨衣雨披，注意保持安全车距，减速慢行，谨慎驾驶。
+       - 暴雨、暴雪等恶劣天气提醒：⚠️ 温馨提示：沿途预计有恶劣天气，建议您带上雨衣雨披，注意保持安全车距，减速慢行，谨慎驾驶。
        - 大风提醒：💨 温馨提示：沿途预计有大风天气，建议您注意防风，大型车辆需特别注意侧风影响，谨慎驾驶。
        - 雾霾提醒：🌫️ 温馨提示：沿途预计有雾霾天气，建议您开启雾灯，保持安全车距，必要时选择服务区休息等待天气好转。
-       - 暴雪提醒：❄️ 温馨提示：沿途预计有暴雪天气，建议您安装防滑链，准备应急物资，必要时推迟出行。
 
     请用清晰的分段和列表形式呈现，便于驾驶员参考。特别注意春节出行高峰期，服务区可能较为拥挤，建议提前规划休息点。"""
 
@@ -339,10 +392,10 @@ class TravelAssistant:
    - 标注可能出现恶劣天气的路段
 
 10. 恶劣天气出行提醒（重要）：
-    - 雨天提醒：☔ 温馨提示：沿途预计有降雨，建议您带好雨具，注意出行安全。
-    - 台风提醒：🌀 温馨提示：沿途预计有台风影响，建议您密切关注天气预警，必要时推迟出行或调整出行计划。
+    - 雨天提醒：☔ 温馨提示：沿途预计有降雨，建议您带上雨具，注意出行安全。
+    - 台风提醒：🌀 温馨提示：沿途预计有台风影响，建议您穿雨衣雨披，注意出行安全。
+    - 暴雨、暴雪等恶劣天气提醒：⚠️ 温馨提示：沿途预计有恶劣天气，建议您穿雨衣雨披，注意出行安全。
     - 大风提醒：💨 温馨提示：沿途预计有大风天气，建议您注意防风，避免户外高空活动。
-    - 暴雪提醒：❄️ 温馨提示：沿途预计有暴雪天气，建议您注意保暖和防滑，必要时推迟出行。
 
 请提供全面的公共交通出行方案。"""
 
@@ -377,11 +430,12 @@ class TravelAssistant:
 10. 根据"{travel_style}"风格重点突出相关内容
 
 【天气提醒】
-11. 如果行程中遇到雨天，请特别添加提醒："☔ 温馨提示：预计有降雨，建议您带好雨具，注意出行安全。"
+11. 如果行程中遇到雨天，请特别添加提醒："☔ 温馨提示：预计有降雨，建议您带上雨具，注意出行安全。"
+12. 如果行程中遇到台风、暴雨等恶劣天气，请特别添加提醒："⚠️ 温馨提示：预计有恶劣天气，建议您穿雨衣雨披，注意出行安全。"
 
 请按天详细列出，便于执行。如果天数较长，可以安排返程或休息日。"""
 
-        system_prompt = """你是一个专业的行程规划师，能够根据用户的需求和喜好，制定详细、实用、个性化的旅游行程计划，并在雨天提醒用户带好雨具。"""
+        system_prompt = """你是一个专业的行程规划师，能够根据用户的需求和喜好，制定详细、实用、个性化的旅游行程计划，并在雨天或恶劣天气时提供相应的出行建议。"""
 
         return self.call_ai_api(prompt, system_prompt)
 
