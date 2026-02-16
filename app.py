@@ -389,18 +389,18 @@ assistant = TravelAssistant()
 
 
 def update_regions(country: str):
-    """根据选择的国家更新地区下拉框（优化性能版本）"""
+    """根据选择的国家更新地区下拉框（Gradio 6.5.1兼容版本）"""
     try:
-        # 使用缓存和gr.update()来提升性能
+        # 使用gr.update()来提升性能并确保Gradio 6.5.1兼容性
         if country and country in REGION_CACHE:
             regions = REGION_CACHE[country]
             # 安全地选择第一个值，避免空列表错误
             default_value = regions[0] if len(regions) > 0 else None
-            # 适配Gradio 6.5.1+：明确指定allow_custom_value
+            # Gradio 6.5.1: 使用gr.update()并明确设置allow_custom_value
             return gr.update(
                 choices=regions,
                 value=default_value,
-                allow_custom_value=True
+                allow_custom_value=True  # 允许用户手动输入
             )
         # 如果不在列表中或为空，返回空的地区列表
         return gr.update(
@@ -573,7 +573,7 @@ def create_interface():
                             label="选择国家",
                             info="选择您想去的旅游国家，也支持手动输入",
                             interactive=True,
-                            allow_custom_value=True
+                            allow_custom_value=True  # Gradio 6.5.1: 允许手动输入
                         )
 
                         city_dropdown = gr.Dropdown(
@@ -581,7 +581,7 @@ def create_interface():
                             label="选择城市/地区",
                             info="选择该国家的城市或地区，也支持手动输入",
                             interactive=True,
-                            allow_custom_value=True
+                            allow_custom_value=True  # Gradio 6.5.1: 允许手动输入
                         )
 
                         recommend_btn = gr.Button("🔍 获取推荐", variant="primary", size="lg")
