@@ -390,15 +390,22 @@ assistant = TravelAssistant()
 
 def update_regions(country: str):
     """根据选择的国家更新地区下拉框（优化性能版本）"""
-    # 使用缓存和gr.update()来提升性能
-    if country and country in REGION_CACHE:
-        regions = REGION_CACHE[country]
-        return gr.update(
-            choices=regions,
-            value=regions[0] if regions else None
-        )
-    # 如果不在列表中或为空，返回空的地区列表
-    return gr.update(choices=[], value=None)
+    try:
+        # 使用缓存和gr.update()来提升性能
+        if country and country in REGION_CACHE:
+            regions = REGION_CACHE[country]
+            # 安全地选择第一个值，避免空列表错误
+            default_value = regions[0] if len(regions) > 0 else None
+            return gr.update(
+                choices=regions,
+                value=default_value
+            )
+        # 如果不在列表中或为空，返回空的地区列表
+        return gr.update(choices=[], value=None)
+    except Exception as e:
+        # 捕获任何异常并返回安全的默认值
+        print(f"update_regions错误: {e}")
+        return gr.update(choices=[], value=None)
 
 
 def recommend_attractions_handler(country: str, city: str) -> Tuple[str, str]:
