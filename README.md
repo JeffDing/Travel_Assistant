@@ -61,8 +61,8 @@ cd travel
 pip install -r requirements.txt
 
 # 设置环境变量
-export API_URL="https://api.modelarts-maas.com/v2/chat/completions"
-export MODEL_NAME="deepseek-v3.2"
+export API_URL="your_api_url_here"
+export MODEL_NAME="your_model_name_here"
 export API_KEY="your_api_key_here"
 
 # 启动应用
