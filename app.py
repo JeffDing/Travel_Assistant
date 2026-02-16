@@ -106,7 +106,22 @@ class TravelAssistant:
         self.api_url = API_URL
         self.model_name = MODEL_NAME
         self.api_key = API_KEY
-        
+
+    def post_process_response(self, response_text: str) -> str:
+        """
+        对AI返回的响应进行后处理，统一替换特定词汇
+
+        Args:
+            response_text: AI返回的原始文本
+
+        Returns:
+            处理后的文本
+        """
+        # 替换规则：将"雨衣或雨披"和"雨衣、雨披"统一替换为"雨衣雨披"
+        response_text = response_text.replace("雨衣或雨披", "雨衣雨披")
+        response_text = response_text.replace("雨衣、雨披", "雨衣雨披")
+        return response_text
+
     def call_ai_api(self, prompt: str, system_prompt: str = None) -> str:
         """
         调用ModelArts Studio API
@@ -145,7 +160,8 @@ class TravelAssistant:
             
             if response.status_code == 200:
                 result = response.json()
-                return result.get("choices", [{}])[0].get("message", {}).get("content", "")
+                content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+                return self.post_process_response(content)
             else:
                 return f"API调用失败: {response.status_code} - {response.text}"
                 
@@ -170,7 +186,7 @@ class TravelAssistant:
 
 【重要提醒】
 如果预报中包含以下天气情况，请在天气预报后添加醒目的出行建议：
-- 雨天（小雨、中雨、大雨、暴雨等）：请添加"☔ 温馨提示：预计有降雨，建议您穿雨衣或雨披，旅游时最好穿雨衣雨披，注意出行安全。"
+- 雨天（小雨、中雨、大雨、暴雨等）：请添加"☔ 温馨提示：预计有降雨，建议您穿雨衣雨披，旅游时最好穿雨衣雨披，注意出行安全。"
 - 台风天气：请添加"🌀 温馨提示：预计有台风影响，建议您密切关注天气变化，做好防风防雨准备，必要时调整出行计划。"
 - 雪天：请添加"❄️ 温馨提示：预计有降雪，建议您携带防寒装备，注意保暖和防滑。"
 - 大风天气：请添加"💨 温馨提示：预计有大风，建议您注意防风，避免户外高空活动。"
@@ -311,7 +327,7 @@ class TravelAssistant:
      - 标注可能出现恶劣天气的路段
 
   17. 恶劣天气出行提醒（重要）：
-     - 雨天提醒：☔ 温馨提示：沿途预计有降雨，建议您携带雨衣、雨披等防雨装备，注意保持安全车距，减速慢行，谨慎驾驶。
+     - 雨天提醒：☔ 温馨提示：沿途预计有降雨，建议您携带雨衣雨披等防雨装备，注意保持安全车距，减速慢行，谨慎驾驶。
      - 台风提醒：🌀 温馨提示：沿途预计有台风影响，建议您密切关注天气预警，必要时推迟出行或调整路线，避免在台风期间自驾。
      - 大风提醒：💨 温馨提示：沿途预计有大风天气，建议您注意防风，大型车辆需特别注意侧风影响，谨慎驾驶。
      - 雾霾提醒：🌫️ 温馨提示：沿途预计有雾霾天气，建议您开启雾灯，保持安全车距，必要时选择服务区休息等待天气好转。
@@ -338,7 +354,7 @@ class TravelAssistant:
    - 标注可能出现恶劣天气的路段
 
 10. 恶劣天气出行提醒（重要）：
-    - 雨天提醒：☔ 温馨提示：沿途预计有降雨，建议您携带雨衣、雨披等防雨装备，注意出行安全。
+    - 雨天提醒：☔ 温馨提示：沿途预计有降雨，建议您携带雨衣雨披等防雨装备，注意出行安全。
     - 台风提醒：🌀 温馨提示：沿途预计有台风影响，建议您密切关注天气预警，必要时推迟出行或调整出行计划。
     - 大风提醒：💨 温馨提示：沿途预计有大风天气，建议您注意防风，避免户外高空活动。
     - 暴雪提醒：❄️ 温馨提示：沿途预计有暴雪天气，建议您注意保暖和防滑，必要时推迟出行。
@@ -376,7 +392,7 @@ class TravelAssistant:
 10. 根据"{travel_style}"风格重点突出相关内容
 
 【天气提醒】
-11. 如果行程中遇到雨天，请特别添加提醒："☔ 温馨提示：预计有降雨，建议您穿雨衣或雨披，旅游时最好穿雨衣雨披，注意出行安全。"
+11. 如果行程中遇到雨天，请特别添加提醒："☔ 温馨提示：预计有降雨，建议您穿雨衣雨披，旅游时最好穿雨衣雨披，注意出行安全。"
 
 请按天详细列出，便于执行。如果天数较长，可以安排返程或休息日。"""
 
