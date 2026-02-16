@@ -94,6 +94,9 @@ TRAVEL_STYLES = [
     "其他"
 ]
 
+# 地区列表缓存（优化性能）
+REGION_CACHE = {country: list(regions.keys()) for country, regions in COUNTRIES_REGIONS.items()}
+
 
 class TravelAssistant:
     """春节旅游计划AI助手类"""
@@ -386,14 +389,16 @@ assistant = TravelAssistant()
 
 
 def update_regions(country: str):
-    """根据选择的国家更新地区下拉框"""
-    # 只有当选择的国家在预定义列表中时才更新地区下拉框
-    # 如果用户手动输入了其他内容，保持地区下拉框不变
-    if country and country in COUNTRIES_REGIONS:
-        regions = list(COUNTRIES_REGIONS[country].keys())
-        return gr.Dropdown(choices=regions, value=regions[0] if regions else None)
-    # 如果不在列表中或为空，返回空的地区列表，但不强制重置
-    return gr.Dropdown(choices=[], value=None, allow_custom_value=True)
+    """根据选择的国家更新地区下拉框（优化性能版本）"""
+    # 使用缓存和gr.update()来提升性能
+    if country and country in REGION_CACHE:
+        regions = REGION_CACHE[country]
+        return gr.update(
+            choices=regions,
+            value=regions[0] if regions else None
+        )
+    # 如果不在列表中或为空，返回空的地区列表
+    return gr.update(choices=[], value=None)
 
 
 def recommend_attractions_handler(country: str, city: str) -> Tuple[str, str]:
