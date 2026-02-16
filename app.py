@@ -10,6 +10,7 @@ import gradio as gr
 import requests
 import json
 from datetime import datetime, timedelta
+from functools import lru_cache
 from typing import Dict, List, Optional, Tuple
 
 # 从环境变量获取API配置
@@ -388,21 +389,46 @@ class TravelAssistant:
 assistant = TravelAssistant()
 
 
+
+
+# 性能优化：使用LRU缓存减少重复计算
+@lru_cache(maxsize=32)
+def get_regions_cached(country: str) -> tuple:
+    """缓存版本的地区获取函数"""
+    if country and country in REGION_CACHE:
+        regions = tuple(REGION_CACHE[country])  # 转为tuple以便缓存
+        default_value = regions[0] if len(regions) > 0 else None
+        return (regions, default_value)
+    return (tuple(), None)
 def update_regions(country: str):
-    """根据选择的国家更新地区下拉框（Gradio 6.5.1兼容版本）"""
+    """根据选择的国家更新地区下拉框（Gradio 6.5.1优化版本 - 使用缓存）"""
     try:
-        # 使用gr.update()来提升性能并确保Gradio 6.5.1兼容性
-        if country and country in REGION_CACHE:
-            regions = REGION_CACHE[country]
-            # 安全地选择第一个值，避免空列表错误
-            default_value = regions[0] if len(regions) > 0 else None
+        # 处理None和空字符串
+        if not country or not isinstance(country, str):
+            return gr.update(
+                choices=[],
+                value=None,
+                allow_custom_value=True
+            )
+        
+        # 查找匹配的国家（支持模糊匹配）
+        matched_country = None
+        for c in REGION_CACHE.keys():
+            if c.lower() == country.lower():
+                matched_country = c
+                break
+        
+        if matched_country:
+            # 使用缓存获取地区列表
+            regions, default_value = get_regions_cached(matched_country)
             # Gradio 6.5.1: 使用gr.update()并明确设置allow_custom_value
             return gr.update(
-                choices=regions,
+                choices=list(regions),  # 将tuple转回list
                 value=default_value,
                 allow_custom_value=True  # 允许用户手动输入
             )
-        # 如果不在列表中或为空，返回空的地区列表
+        
+        # 如果不在列表中，返回空的地区列表
         return gr.update(
             choices=[],
             value=None,
@@ -410,46 +436,75 @@ def update_regions(country: str):
         )
     except Exception as e:
         # 捕获任何异常并返回安全的默认值
+        import traceback
         print(f"update_regions错误: {e}")
+        print(f"错误详情: {traceback.format_exc()}")
         return gr.update(
             choices=[],
             value=None,
             allow_custom_value=True
         )
 
-
 def recommend_attractions_handler(country: str, city: str) -> Tuple[str, str]:
     """处理景点推荐请求"""
-    if not country:
-        return "请先选择国家", ""
-    
-    attractions, weather = assistant.recommend_attractions(country, city if city else None)
-    return attractions, weather
+    try:
+        if not country:
+            return "请先选择国家", ""
+        
+        attractions, weather = assistant.recommend_attractions(country, city if city else None)
+        return attractions, weather
+    except Exception as e:
+        import traceback
+        error_msg = f"获取推荐时发生错误: {str(e)}"
+        print(error_msg)
+        print(traceback.format_exc())
+        return error_msg, ""
 
 
 def get_attraction_info_handler(attraction: str) -> Tuple[str, str]:
     """处理景点查询请求"""
-    if not attraction:
-        return "请输入景点名称", ""
-    
-    info, weather = assistant.get_attraction_info(attraction)
-    return info, weather
+    try:
+        if not attraction:
+            return "请输入景点名称", ""
+        
+        info, weather = assistant.get_attraction_info(attraction)
+        return info, weather
+    except Exception as e:
+        import traceback
+        error_msg = f"查询景点时发生错误: {str(e)}"
+        print(error_msg)
+        print(traceback.format_exc())
+        return error_msg, ""
 
 
 def plan_route_handler(start: str, end: str, transport_type: str) -> str:
     """处理路线规划请求"""
-    if not start or not end:
-        return "请输入起点和终点"
-    
-    return assistant.plan_route(start, end, transport_type)
+    try:
+        if not start or not end:
+            return "请输入起点和终点"
+        
+        return assistant.plan_route(start, end, transport_type)
+    except Exception as e:
+        import traceback
+        error_msg = f"规划路线时发生错误: {str(e)}"
+        print(error_msg)
+        print(traceback.format_exc())
+        return error_msg
 
 
 def plan_itinerary_handler(destination: str, days: int, travel_style: str) -> str:
     """处理行程规划请求"""
-    if not destination or not days:
-        return "请输入目的地和游玩天数"
-    
-    return assistant.plan_itinerary(destination, days, travel_style)
+    try:
+        if not destination or not days:
+            return "请输入目的地和游玩天数"
+        
+        return assistant.plan_itinerary(destination, days, travel_style)
+    except Exception as e:
+        import traceback
+        error_msg = f"规划行程时发生错误: {str(e)}"
+        print(error_msg)
+        print(traceback.format_exc())
+        return error_msg
 
 
 def create_interface():
