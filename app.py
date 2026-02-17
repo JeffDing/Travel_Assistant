@@ -687,7 +687,8 @@ def create_interface():
                         )
 
                         city_dropdown = gr.Dropdown(
-                            choices=[],
+                            choices=list(COUNTRIES_REGIONS.get("中国", {}).keys()),
+                            value=list(COUNTRIES_REGIONS.get("中国", {}).keys())[0] if COUNTRIES_REGIONS.get("中国") else None,
                             label="选择城市/地区",
                             info="选择该国家的城市或地区，也支持手动输入",
                             interactive=True,
