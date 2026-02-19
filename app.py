@@ -511,7 +511,14 @@ class TravelAssistant:
     - 在每天行程开头显示当日天气（如"🌤️ 天气：晴，温度 15-22℃，微风"）
     - 根据该地点的气候特点和季节给出合理的天气预测
     
-12. 根据天气情况给出出行提示：
+12. 根据天气情况给出出行提示（重要格式要求）：
+    - 天气提示必须在天气信息下方**换行**单独显示
+    - 格式示例：
+      ```
+      🌤️ 天气：晴，温度 15-22℃，微风
+      
+      ☔ 温馨提示：预计有降雨，建议您带上雨具，注意出行安全。
+      ```
     - 雨天（小雨、中雨、大雨等）：添加"☔ 温馨提示：预计有降雨，建议您带上雨具，注意出行安全。"
     - 台风天气：添加"🌀 温馨提示：预计有台风影响，建议您穿雨衣雨披，注意出行安全。"
     - 暴雨、暴雪等恶劣天气：添加"⚠️ 温馨提示：预计有恶劣天气，建议您穿雨衣雨披，注意出行安全。"
@@ -570,6 +577,33 @@ def update_regions(country: str):
                 allow_custom_value=True  # 允许用户手动输入
             )
 
+        # 自定义国家：调用AI获取推荐城市
+        try:
+            prompt = f"""请推荐{country}最适合旅游的5-8个城市或地区。
+请直接列出城市名称，用逗号分隔，不要添加其他说明。
+例如：东京,大阪,京都,北海道,福冈"""
+            
+            system_prompt = """你是一个专业的旅游顾问，熟悉全球各国的旅游城市。请简洁地列出城市名称。"""
+            
+            # 使用较短的超时和较少的token
+            cities_text = assistant.call_ai_api(prompt, system_prompt)
+            
+            # 解析AI返回的城市列表
+            cities = []
+            for city in cities_text.replace('，', ',').split(','):
+                city = city.strip()
+                # 过滤掉一些常见的无效内容
+                if city and len(city) < 20 and not any(x in city for x in ['推荐', '城市', '地区', '旅游', '例如', '如下', '以下']):
+                    cities.append(city)
+            
+            if cities:
+                return gr.update(
+                    choices=cities,
+                    value=cities[0] if cities else None,
+                    allow_custom_value=True
+                )
+        except Exception as e:
+            print(f"获取自定义国家城市失败: {e}")
 
         return gr.update(
             choices=[],
