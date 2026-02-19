@@ -149,6 +149,14 @@ class TravelAssistant:
             response_text = response_text.replace('雨衣雨披，雨衣雨披', '雨衣雨披')
             response_text = response_text.replace('雨衣雨披,雨衣雨披', '雨衣雨披')
             response_text = response_text.replace('雨衣雨披与雨衣雨披', '雨衣雨披')
+        
+        # 去除"雨衣雨披雨披"等重复模式
+        while '雨衣雨披雨披' in response_text:
+            response_text = response_text.replace('雨衣雨披雨披', '雨衣雨披')
+        while '雨披雨披' in response_text:
+            response_text = response_text.replace('雨披雨披', '雨披')
+        while '雨衣雨衣' in response_text:
+            response_text = response_text.replace('雨衣雨衣', '雨衣')
 
         while '雨具和雨具' in response_text or '雨具、雨具' in response_text or '雨具，雨具' in response_text or '雨具,雨具' in response_text or '雨具与雨具' in response_text:
             response_text = response_text.replace('雨具和雨具', '雨具')
@@ -156,10 +164,14 @@ class TravelAssistant:
             response_text = response_text.replace('雨具，雨具', '雨具')
             response_text = response_text.replace('雨具,雨具', '雨具')
             response_text = response_text.replace('雨具与雨具', '雨具')
+        
+        # 去除"雨具雨具"等重复模式
+        while '雨具雨具' in response_text:
+            response_text = response_text.replace('雨具雨具', '雨具')
 
         return response_text
 
-    def call_ai_api(self, prompt: str, system_prompt: str = None, max_retries: int = 3) -> str:
+    def call_ai_api(self, prompt: str, system_prompt: str = None, max_retries: int = 3, max_tokens: int = 8000) -> str:
         """
         调用ModelArts Studio API
 
@@ -167,6 +179,7 @@ class TravelAssistant:
             prompt: 用户提示词
             system_prompt: 系统提示词（可选）
             max_retries: 最大重试次数（默认3次）
+            max_tokens: 最大生成token数（默认8000）
 
         Returns:
             AI返回的响应文本
@@ -185,7 +198,7 @@ class TravelAssistant:
             "model": self.model_name,
             "messages": messages,
             "temperature": 0.7,
-            "max_tokens": 2000
+            "max_tokens": max_tokens
         }
 
         # 连接超时10秒，读取超时120秒
@@ -460,7 +473,26 @@ class TravelAssistant:
         Returns:
             每日行程规划
         """
+        # 计算具体日期
+        today = datetime.now()
+        date_list = []
+        for i in range(1, days + 1):
+            future_date = today + timedelta(days=i)
+            # 格式：2月20日（周四）
+            date_str = future_date.strftime("%m月%d日（%a）")
+            # 将英文星期转换为中文
+            weekday_map = {"Mon": "周一", "Tue": "周二", "Wed": "周三", "Thu": "周四", "Fri": "周五", "Sat": "周六", "Sun": "周日"}
+            for en, cn in weekday_map.items():
+                date_str = date_str.replace(en, cn)
+            date_list.append(date_str)
+        
+        date_range = "、".join(date_list)
+
         prompt = f"""请为{destination}制定一个{days}天的详细行程规划，游玩风格为：{travel_style}。
+
+【重要】日期信息：
+- 行程日期范围：{date_range}
+- 请在每天的行程开头显示具体日期（如"## 📅 第1天 - 02月20日（周四）"）
 
 要求：
 1. 每天的行程安排要合理，不要过于紧凑或松散
@@ -474,13 +506,23 @@ class TravelAssistant:
 9. 春节期间的特色活动或氛围
 10. 根据"{travel_style}"风格重点突出相关内容
 
-【天气提醒】
-11. 如果行程中遇到雨天，请特别添加提醒："☔ 温馨提示：预计有降雨，建议您带上雨具，注意出行安全。"
-12. 如果行程中遇到台风、暴雨等恶劣天气，请特别添加提醒："⚠️ 温馨提示：预计有恶劣天气，建议您穿雨衣雨披，注意出行安全。"
+【天气与出行提示】（重要）
+11. 请为每一天的行程添加天气情况预测：
+    - 在每天行程开头显示当日天气（如"🌤️ 天气：晴，温度 15-22℃，微风"）
+    - 根据该地点的气候特点和季节给出合理的天气预测
+    
+12. 根据天气情况给出出行提示：
+    - 雨天（小雨、中雨、大雨等）：添加"☔ 温馨提示：预计有降雨，建议您带上雨具，注意出行安全。"
+    - 台风天气：添加"🌀 温馨提示：预计有台风影响，建议您穿雨衣雨披，注意出行安全。"
+    - 暴雨、暴雪等恶劣天气：添加"⚠️ 温馨提示：预计有恶劣天气，建议您穿雨衣雨披，注意出行安全。"
+    - 雪天：添加"❄️ 温馨提示：预计有降雪，建议您携带防寒装备，注意保暖和防滑。"
+    - 大风天气：添加"💨 温馨提示：预计有大风，建议您注意防风，避免户外高空活动。"
+    - 高温天气（35℃以上）：添加"🌡️ 温馨提示：预计高温天气，建议您做好防晒防暑，多补充水分。"
+    - 低温天气（0℃以下）：添加"🥶 温馨提示：预计低温天气，建议您注意保暖，穿戴厚实衣物。"
 
 请按天详细列出，便于执行。如果天数较长，可以安排返程或休息日。"""
 
-        system_prompt = """你是一个专业的行程规划师，能够根据用户的需求和喜好，制定详细、实用、个性化的旅游行程计划，并在雨天或恶劣天气时提供相应的出行建议。"""
+        system_prompt = """你是一个专业的行程规划师，能够根据用户的需求和喜好，制定详细、实用、个性化的旅游行程计划。你需要根据目的地的气候特点和季节，为每天的行程提供合理的天气预测和相应的出行建议。"""
 
         return self.call_ai_api(prompt, system_prompt)
 
@@ -656,7 +698,7 @@ def create_interface():
         border-radius: 10px;
         padding: 20px;
         margin-top: 15px;
-        max-height: 500px;
+        max-height: 800px;
         overflow-y: auto;
     }
 
@@ -704,6 +746,34 @@ def create_interface():
     .label {
         font-weight: 600 !important;
         color: #333 !important;
+    }
+    
+    /* 行程规划输出区域 - 支持超长文本 */
+    .itinerary-output {
+        max-height: 1200px !important;
+        overflow-y: auto !important;
+        padding: 20px !important;
+        background: #ffffff !important;
+        border: 2px solid #e0e0e0 !important;
+        border-radius: 10px !important;
+    }
+    
+    .itinerary-output::-webkit-scrollbar {
+        width: 10px;
+    }
+    
+    .itinerary-output::-webkit-scrollbar-track {
+        background: #f1f1f1;
+        border-radius: 5px;
+    }
+    
+    .itinerary-output::-webkit-scrollbar-thumb {
+        background: #888;
+        border-radius: 5px;
+    }
+    
+    .itinerary-output::-webkit-scrollbar-thumb:hover {
+        background: #555;
     }
     """
 
@@ -872,7 +942,10 @@ def create_interface():
                     with gr.Column(scale=2):
                         itinerary_output = gr.Markdown(
                             label="行程规划",
-                            value="行程规划信息将在这里显示"
+                            value="行程规划信息将在这里显示",
+                            elem_classes=["result-box", "itinerary-output"],
+                            latex_delimiters=[],
+                            show_copy_button=True
                         )
 
                 itinerary_btn.click(
