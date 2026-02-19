@@ -159,51 +159,77 @@ class TravelAssistant:
 
         return response_text
 
-    def call_ai_api(self, prompt: str, system_prompt: str = None) -> str:
+    def call_ai_api(self, prompt: str, system_prompt: str = None, max_retries: int = 3) -> str:
         """
         调用ModelArts Studio API
 
         Args:
             prompt: 用户提示词
             system_prompt: 系统提示词（可选）
+            max_retries: 最大重试次数（默认3次）
 
         Returns:
             AI返回的响应文本
         """
-        try:
-            headers = {
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.api_key}"
-            }
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}"
+        }
 
-            messages = []
-            if system_prompt:
-                messages.append({"role": "system", "content": system_prompt})
-            messages.append({"role": "user", "content": prompt})
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
 
-            payload = {
-                "model": self.model_name,
-                "messages": messages,
-                "temperature": 0.7,
-                "max_tokens": 2000
-            }
+        payload = {
+            "model": self.model_name,
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": 2000
+        }
 
-            response = requests.post(
-                self.api_url,
-                headers=headers,
-                json=payload,
-                timeout=60
-            )
+        # 连接超时10秒，读取超时120秒
+        timeout = (10, 120)
 
-            if response.status_code == 200:
-                result = response.json()
-                content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-                return self.post_process_response(content)
-            else:
-                return f"API调用失败: {response.status_code} - {response.text}"
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(
+                    self.api_url,
+                    headers=headers,
+                    json=payload,
+                    timeout=timeout
+                )
 
-        except Exception as e:
-            return f"调用AI服务时发生错误: {str(e)}"
+                if response.status_code == 200:
+                    result = response.json()
+                    content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    return self.post_process_response(content)
+                else:
+                    return f"API调用失败: {response.status_code} - {response.text}"
+
+            except requests.exceptions.Timeout as e:
+                last_error = e
+                print(f"API调用超时 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
+                if attempt < max_retries - 1:
+                    import time
+                    wait_time = 2 ** attempt  # 指数退避：1秒、2秒、4秒
+                    print(f"等待 {wait_time} 秒后重试...")
+                    time.sleep(wait_time)
+                continue
+            except requests.exceptions.RequestException as e:
+                last_error = e
+                print(f"API调用网络错误 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
+                if attempt < max_retries - 1:
+                    import time
+                    wait_time = 2 ** attempt
+                    print(f"等待 {wait_time} 秒后重试...")
+                    time.sleep(wait_time)
+                continue
+            except Exception as e:
+                return f"调用AI服务时发生错误: {str(e)}"
+
+        return f"调用AI服务时发生错误: 连接超时，已重试{max_retries}次仍失败。请稍后再试或检查网络连接。原始错误: {str(last_error)}"
 
     def get_weather_info(self, location: str, days: int = 7) -> str:
         """
@@ -216,10 +242,29 @@ class TravelAssistant:
         Returns:
             天气信息文本
         """
+        # 计算具体日期
+        today = datetime.now()
+        date_list = []
+        for i in range(1, days + 1):
+            future_date = today + timedelta(days=i)
+            # 格式：2月20日（周四）
+            date_str = future_date.strftime("%m月%d日（%a）")
+            # 将英文星期转换为中文
+            weekday_map = {"Mon": "周一", "Tue": "周二", "Wed": "周三", "Thu": "周四", "Fri": "周五", "Sat": "周六", "Sun": "周日"}
+            for en, cn in weekday_map.items():
+                date_str = date_str.replace(en, cn)
+            date_list.append(date_str)
+        
+        date_range = "、".join(date_list)
+
         prompt = f"""请为{location}生成未来{days}天的天气预报信息。
 注意：这是春节旅游期间，请根据该地点的气候特点给出合理的天气预测。
 请以表格形式展示，包含日期、天气状况、温度范围（最高温/最低温）、风力风向、穿衣建议等。
-日期从明天开始计算。
+
+【重要】日期显示要求：
+- 请使用具体日期显示，不要使用"第1天"、"第2天"等表述
+- 日期范围：{date_range}
+- 表格中的日期列请直接显示具体日期（如"2月20日"）
 
 【重要提醒】
 如果预报中包含以下天气情况，请在天气预报后添加醒目的出行建议：
