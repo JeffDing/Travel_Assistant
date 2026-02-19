@@ -625,7 +625,7 @@ def recommend_attractions_handler(country: str, city: str) -> Tuple[str, str]:
     """处理景点推荐请求"""
     try:
         if not country:
-            return "请先选择国家", ""
+            return "请先选择国家/地区", ""
 
         attractions, weather = assistant.recommend_attractions(country, city if city else None)
         return attractions, weather
@@ -829,8 +829,8 @@ def create_interface():
                     with gr.Column(scale=1):
                         country_dropdown = gr.Dropdown(
                             choices=list(COUNTRIES_REGIONS.keys()),
-                            label="选择国家",
-                            info="选择您想去的旅游国家，也支持手动输入",
+                            label="选择国家/地区",
+                            info="选择您想去的旅游国家或地区，也支持手动输入",
                             interactive=True,
                             allow_custom_value=True  # Gradio 6.5.1: 允许手动输入
                         )
@@ -838,8 +838,8 @@ def create_interface():
                         city_dropdown = gr.Dropdown(
                             choices=list(COUNTRIES_REGIONS.get("中国", {}).keys()),
                             value=list(COUNTRIES_REGIONS.get("中国", {}).keys())[0] if COUNTRIES_REGIONS.get("中国") else None,
-                            label="选择城市/地区",
-                            info="选择该国家的城市或地区，也支持手动输入",
+                            label="选择城市",
+                            info="选择该国家或地区的下一级城市，也支持手动输入",
                             interactive=True,
                             allow_custom_value=True  # Gradio 6.5.1: 允许手动输入
                         )
@@ -849,7 +849,7 @@ def create_interface():
                     with gr.Column(scale=2):
                         attractions_output = gr.Markdown(
                             label="景点推荐",
-                            value="请选择国家和城市，然后点击获取推荐"
+                            value="请选择国家/地区和城市，然后点击获取推荐"
                         )
 
                         weather_output = gr.Markdown(
