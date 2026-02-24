@@ -283,7 +283,7 @@ class TravelAssistant:
 
         return self.call_ai_api(prompt, system_prompt)
 
-    def get_attraction_info(self, attraction: str) -> Tuple[str, str]:
+    def get_attraction_info(self, attraction: str) -> tuple[str, str]:
         """
         获取景点介绍信息和天气
 
@@ -313,7 +313,7 @@ class TravelAssistant:
 
         return attraction_info, weather_info
 
-    def recommend_attractions(self, country: str, city: str = None) -> Tuple[str, str]:
+    def recommend_attractions(self, country: str, city: str = None) -> tuple[str, str]:
         """
         推荐目的地知名景点和天气
 
