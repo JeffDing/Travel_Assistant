@@ -11,18 +11,18 @@
 """
 
 import os
+import re
+import time
+import traceback
 import gradio as gr
 from openai import OpenAI
 from datetime import datetime, timedelta
 from functools import lru_cache
-from typing import Dict, List, Optional, Tuple
-import re
 
 # 从环境变量获取API配置
-API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
-MODEL_NAME = os.getenv("MODEL_NAME", "gpt-3.5-turbo")
-API_KEY = os.getenv("API_KEY", "")
-
+API_URL = os.getenv("API_URL")
+MODEL_NAME = os.getenv("MODEL_NAME")
+API_KEY = os.getenv("API_KEY")
 
 # 国家和地区数据
 COUNTRIES_REGIONS = {
@@ -103,19 +103,21 @@ TRAVEL_STYLES = [
 # 地区列表缓存（优化性能）
 REGION_CACHE = {country: list(regions.keys()) for country, regions in COUNTRIES_REGIONS.items()}
 
+# 星期映射表（英文转中文）
+WEEKDAY_MAP = {"Mon": "周一", "Tue": "周二", "Wed": "周三", "Thu": "周四", "Fri": "周五", "Sat": "周六", "Sun": "周日"}
 
 class TravelAssistant:
     """春节旅游计划AI助手类"""
 
     def __init__(self):
-        self.api_base_url = API_BASE_URL
+        self.api_url = API_URL
         self.model_name = MODEL_NAME
         self.api_key = API_KEY
 
         # 初始化OpenAI客户端
         self.client = OpenAI(
             api_key=self.api_key,
-            base_url=self.api_base_url
+            base_url=self.api_url
         )
 
         # 验证配置
@@ -226,7 +228,6 @@ class TravelAssistant:
 
                 # 检查是否是可重试的错误
                 if attempt < max_retries - 1:
-                    import time
                     wait_time = 2 ** attempt  # 指数退避
                     print(f"等待 {wait_time} 秒后重试...")
                     time.sleep(wait_time)
@@ -253,8 +254,7 @@ class TravelAssistant:
             # 格式：2月20日（周四）
             date_str = future_date.strftime("%m月%d日（%a）")
             # 将英文星期转换为中文
-            weekday_map = {"Mon": "周一", "Tue": "周二", "Wed": "周三", "Thu": "周四", "Fri": "周五", "Sat": "周六", "Sun": "周日"}
-            for en, cn in weekday_map.items():
+            for en, cn in WEEKDAY_MAP.items():
                 date_str = date_str.replace(en, cn)
             date_list.append(date_str)
         
@@ -309,8 +309,6 @@ class TravelAssistant:
         system_prompt = """你是一个专业的旅游景点介绍专家，请提供准确、详细、实用的景点介绍信息。"""
 
         attraction_info = self.call_ai_api(prompt, system_prompt)
-
-
         weather_info = self.get_weather_info(attraction, days=7)
 
         return attraction_info, weather_info
@@ -471,8 +469,7 @@ class TravelAssistant:
             # 格式：2月20日（周四）
             date_str = future_date.strftime("%m月%d日（%a）")
             # 将英文星期转换为中文
-            weekday_map = {"Mon": "周一", "Tue": "周二", "Wed": "周三", "Thu": "周四", "Fri": "周五", "Sat": "周六", "Sun": "周日"}
-            for en, cn in weekday_map.items():
+            for en, cn in WEEKDAY_MAP.items():
                 date_str = date_str.replace(en, cn)
             date_list.append(date_str)
         
@@ -523,12 +520,8 @@ class TravelAssistant:
 
         return self.call_ai_api(prompt, system_prompt)
 
-
 # 全局实例
 assistant = TravelAssistant()
-
-
-
 
 # 性能优化：使用LRU缓存减少重复计算
 @lru_cache(maxsize=32)
@@ -542,14 +535,8 @@ def get_regions_cached(country: str) -> tuple:
 def update_regions(country: str):
     """根据选择的国家更新地区下拉框（Gradio 6.5.1优化版本 - 使用缓存）"""
     try:
-
         if not country or not isinstance(country, str):
-            return gr.update(
-                choices=[],
-                value=None,
-                allow_custom_value=True
-            )
-
+            return gr.update(choices=[], value=None, allow_custom_value=True)
 
         matched_country = None
         for c in REGION_CACHE.keys():
@@ -558,14 +545,8 @@ def update_regions(country: str):
                 break
 
         if matched_country:
-
             regions, default_value = get_regions_cached(matched_country)
-
-            return gr.update(
-                choices=list(regions),  # 将tuple转回list
-                value=default_value,
-                allow_custom_value=True  # 允许用户手动输入
-            )
+            return gr.update(choices=list(regions), value=default_value, allow_custom_value=True)
 
         # 自定义国家：调用AI获取推荐城市
         try:
@@ -574,109 +555,72 @@ def update_regions(country: str):
 例如：东京,大阪,京都,北海道,福冈"""
             
             system_prompt = """你是一个专业的旅游顾问，熟悉全球各国的旅游城市。请简洁地列出城市名称。"""
-            
-            # 使用较短的超时和较少的token
             cities_text = assistant.call_ai_api(prompt, system_prompt)
             
-            # 解析AI返回的城市列表
             cities = []
             for city in cities_text.replace('，', ',').split(','):
                 city = city.strip()
-                # 过滤掉一些常见的无效内容
                 if city and len(city) < 20 and not any(x in city for x in ['推荐', '城市', '地区', '旅游', '例如', '如下', '以下']):
                     cities.append(city)
             
             if cities:
-                return gr.update(
-                    choices=cities,
-                    value=cities[0] if cities else None,
-                    allow_custom_value=True
-                )
+                return gr.update(choices=cities, value=cities[0], allow_custom_value=True)
         except Exception as e:
             print(f"获取自定义国家城市失败: {e}")
 
-        return gr.update(
-            choices=[],
-            value=None,
-            allow_custom_value=True
-        )
+        return gr.update(choices=[], value=None, allow_custom_value=True)
     except Exception as e:
+        print(f"update_regions错误: {e}\n{traceback.format_exc()}")
+        return gr.update(choices=[], value=None, allow_custom_value=True)
 
-        import traceback
-        print(f"update_regions错误: {e}")
-        print(f"错误详情: {traceback.format_exc()}")
-        return gr.update(
-            choices=[],
-            value=None,
-            allow_custom_value=True
-        )
-
-def recommend_attractions_handler(country: str, city: str) -> Tuple[str, str]:
+def recommend_attractions_handler(country: str, city: str):
     """处理景点推荐请求"""
     try:
         if not country:
             return "请先选择国家/地区", ""
-
         attractions, weather = assistant.recommend_attractions(country, city if city else None)
         return attractions, weather
     except Exception as e:
-        import traceback
         error_msg = f"获取推荐时发生错误: {str(e)}"
-        print(error_msg)
-        print(traceback.format_exc())
+        print(f"{error_msg}\n{traceback.format_exc()}")
         return error_msg, ""
 
-
-def get_attraction_info_handler(attraction: str) -> Tuple[str, str]:
+def get_attraction_info_handler(attraction: str):
     """处理景点查询请求"""
     try:
         if not attraction:
             return "请输入景点名称", ""
-
         info, weather = assistant.get_attraction_info(attraction)
         return info, weather
     except Exception as e:
-        import traceback
         error_msg = f"查询景点时发生错误: {str(e)}"
-        print(error_msg)
-        print(traceback.format_exc())
+        print(f"{error_msg}\n{traceback.format_exc()}")
         return error_msg, ""
-
 
 def plan_route_handler(start: str, end: str, transport_type: str) -> str:
     """处理路线规划请求"""
     try:
         if not start or not end:
             return "请输入起点和终点"
-
         return assistant.plan_route(start, end, transport_type)
     except Exception as e:
-        import traceback
         error_msg = f"规划路线时发生错误: {str(e)}"
-        print(error_msg)
-        print(traceback.format_exc())
+        print(f"{error_msg}\n{traceback.format_exc()}")
         return error_msg
-
 
 def plan_itinerary_handler(destination: str, days: int, travel_style: str) -> str:
     """处理行程规划请求"""
     try:
         if not destination or not days:
             return "请输入目的地和游玩天数"
-
         return assistant.plan_itinerary(destination, days, travel_style)
     except Exception as e:
-        import traceback
         error_msg = f"规划行程时发生错误: {str(e)}"
-        print(error_msg)
-        print(traceback.format_exc())
+        print(f"{error_msg}\n{traceback.format_exc()}")
         return error_msg
-
 
 def create_interface():
     """创建Gradio界面"""
-
-
     custom_css = """
     .gradio-container {
         font-family: 'Microsoft YaHei', 'PingFang SC', sans-serif !important;
@@ -802,7 +746,6 @@ def create_interface():
     """
 
     with gr.Blocks(css=custom_css, title="春节旅游计划AI助手") as app:
-
         gr.HTML("""
         <div class="header">
             <h1>🧧 春节旅游计划AI助手 🧧</h1>
@@ -811,7 +754,6 @@ def create_interface():
         """)
 
         with gr.Tabs():
-
             with gr.TabItem("🌍 目的地推荐", id=1):
                 gr.Markdown("### 选择您的旅行目的地，获取景点推荐和天气信息")
 
@@ -847,7 +789,6 @@ def create_interface():
                             value="天气信息将在这里显示"
                         )
 
-
                 country_dropdown.change(
                     fn=update_regions,
                     inputs=country_dropdown,
@@ -859,7 +800,6 @@ def create_interface():
                     inputs=[country_dropdown, city_dropdown],
                     outputs=[attractions_output, weather_output]
                 )
-
 
             with gr.TabItem("🏛️ 景点查询", id=2):
                 gr.Markdown("### 输入景点名称，获取详细介绍和天气信息")
@@ -890,7 +830,6 @@ def create_interface():
                     inputs=[attraction_input],
                     outputs=[attraction_info_output, attraction_weather_output]
                 )
-
 
             with gr.TabItem("🚗 交通路线规划", id=3):
                 gr.Markdown("### 规划您的出行路线")
@@ -927,7 +866,6 @@ def create_interface():
                     inputs=[start_point, end_point, transport_type],
                     outputs=[route_output]
                 )
-
 
             with gr.TabItem("📅 行程规划", id=4):
                 gr.Markdown("### 制定您的详细游玩行程")
@@ -988,13 +926,12 @@ def create_interface():
 
     return app
 
-
 def main():
     """主函数"""
     print("=" * 60)
     print("春节旅游计划AI助手")
     print("=" * 60)
-    print(f"API Base URL: {API_BASE_URL}")
+    print(f"API URL: {API_URL}")
     print(f"Model: {MODEL_NAME}")
     print(f"API Key: {'已设置' if API_KEY else '未设置'}")
     print("=" * 60)
@@ -1002,8 +939,8 @@ def main():
     if not API_KEY:
         print("⚠️  警告：API_KEY未设置，请确保环境变量已配置")
 
-    if not API_BASE_URL:
-        print("⚠️  警告：API_BASE_URL未设置，请确保环境变量已配置")
+    if not API_URL:
+        print("⚠️  警告：API_URL未设置，请确保环境变量已配置")
 
     if not MODEL_NAME:
         print("⚠️  警告：MODEL_NAME未设置，请确保环境变量已配置")
@@ -1016,12 +953,12 @@ def main():
     print("  - 其他OpenAI兼容API")
     print("\n环境变量配置示例:")
     print("  # OpenAI官方")
-    print("  export API_BASE_URL=https://api.openai.com/v1")
+    print("  export API_URL=https://api.openai.com/v1")
     print("  export MODEL_NAME=gpt-4")
     print("  export API_KEY=sk-your-api-key")
     print("")
     print("  # ModelArts或其他兼容服务")
-    print("  export API_BASE_URL=https://your-endpoint/v1")
+    print("  export API_URL=https://your-endpoint/v1")
     print("  export MODEL_NAME=your-model-name")
     print("  export API_KEY=your-api-key")
     print("=" * 60)
@@ -1034,7 +971,6 @@ def main():
         share=False,
         show_error=True
     )
-
 
 if __name__ == "__main__":
     main()

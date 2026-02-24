@@ -31,11 +31,11 @@
 
 应用使用以下环境变量，支持任何OpenAI兼容的API服务：
 
-| 环境变量 | 说明 | 默认值 |
-|---------|------|--------|
-| `API_BASE_URL` | API基础地址 | `https://api.openai.com/v1` |
-| `MODEL_NAME` | 使用的模型名称 | `gpt-3.5-turbo` |
-| `API_KEY` | API访问密钥 | 无（必填） |
+| 环境变量 | 说明 |
+|---------|------|
+| `API_URL` | API基础地址（必填） |
+| `MODEL_NAME` | 使用的模型名称（必填） |
+| `API_KEY` | API访问密钥（必填） |
 
 ### 支持的API服务
 
@@ -56,7 +56,7 @@ cd travel
 nano run.sh  # 或使用其他编辑器
 
 # 修改以下配置项：
-# export API_BASE_URL="https://api.openai.com/v1"
+# export API_URL="https://api.openai.com/v1"
 # export MODEL_NAME="gpt-3.5-turbo"
 # export API_KEY="your-api-key-here"
 
@@ -73,7 +73,7 @@ cd travel
 pip install -r requirements.txt
 
 # 设置环境变量
-export API_BASE_URL="your_api_base_url"
+export API_URL="your_api_base_url"
 export MODEL_NAME="your_model_name"
 export API_KEY="your_api_key"
 
@@ -130,7 +130,7 @@ travel/
 ### Q: 如何配置API？
 A: 编辑 `run.sh` 文件，修改以下配置项：
    ```bash
-   export API_BASE_URL="your_api_base_url"
+   export API_URL="your_api_base_url"
    export MODEL_NAME="your_model_name"
    export API_KEY="your_api_key"
    ```
