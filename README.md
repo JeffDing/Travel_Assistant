@@ -1,6 +1,6 @@
 # 春节旅游计划AI助手
 
-一个基于Python + Gradio + ModelArts Studio API的智能旅游规划小助手，帮助用户制定春节假期旅游计划。
+一个基于Python + Gradio + OpenAI API的智能旅游规划小助手，帮助用户制定春节假期旅游计划。
 
 ## 功能特性
 
@@ -29,13 +29,21 @@
 
 ## 环境变量配置
 
-应用使用以下环境变量，后期修改API无需改动代码：
+应用使用以下环境变量，支持任何OpenAI兼容的API服务：
 
-- `API_URL`: ModelArts Studio API地址
-- `MODEL_NAME`: 使用的模型名称
-- `API_KEY`: API访问密钥
+| 环境变量 | 说明 | 默认值 |
+|---------|------|--------|
+| `API_BASE_URL` | API基础地址 | `https://api.openai.com/v1` |
+| `MODEL_NAME` | 使用的模型名称 | `gpt-3.5-turbo` |
+| `API_KEY` | API访问密钥 | 无（必填） |
 
-环境变量已在 `run.sh` 脚本中设置，如需修改请编辑 `run.sh` 文件。
+### 支持的API服务
+
+- **OpenAI官方API**: `https://api.openai.com/v1`
+- **ModelArts Studio**: `https://your-endpoint/v1`
+- **Azure OpenAI**: `https://your-resource.openai.azure.com`
+- **本地部署**: `http://localhost:11434/v1` (Ollama等)
+- **其他OpenAI兼容服务**
 
 ## 安装和运行
 
@@ -43,14 +51,18 @@
 
 ```bash
 cd travel
+
+# 1. 编辑 run.sh 文件，配置您的API信息
+nano run.sh  # 或使用其他编辑器
+
+# 修改以下配置项：
+# export API_BASE_URL="https://api.openai.com/v1"
+# export MODEL_NAME="gpt-3.5-turbo"
+# export API_KEY="your-api-key-here"
+
+# 2. 启动应用
 bash run.sh
 ```
-
-启动脚本会自动：
-1. 设置环境变量
-2. 检查Python环境
-3. 安装所需依赖
-4. 启动应用
 
 ### 方法二：手动安装
 
@@ -61,9 +73,9 @@ cd travel
 pip install -r requirements.txt
 
 # 设置环境变量
-export API_URL="your_api_url_here"
-export MODEL_NAME="your_model_name_here"
-export API_KEY="your_api_key_here"
+export API_BASE_URL="your_api_base_url"
+export MODEL_NAME="your_model_name"
+export API_KEY="your_api_key"
 
 # 启动应用
 python app.py
@@ -82,17 +94,17 @@ http://localhost:7860
 ```
 travel/
 ├── app.py              # 主应用文件
-├── run.sh              # 启动脚本（包含环境变量）
+├── run.sh              # 启动脚本（包含API配置）
 ├── requirements.txt    # Python依赖
-└── README.md          # 项目说明文档
+└── README.md           # 项目说明文档
 ```
 
 ## 技术栈
 
 - **Python 3.7+**
 - **Gradio 4.0+**: Web界面框架
-- **Requests**: HTTP请求库
-- **ModelArts Studio API**: AI服务
+- **OpenAI Python SDK**: API调用库
+- **OpenAI兼容API**: AI服务
 
 ## 特色功能
 
@@ -101,10 +113,47 @@ travel/
 3. **灵活输入**: 既支持下拉选择，也支持手动输入（小众景点）
 4. **全面规划**: 涵盖景点、天气、交通、行程等旅游全流程
 5. **安全配置**: API密钥通过环境变量管理，不暴露在代码中
+6. **通用API**: 支持任何OpenAI兼容的API服务
+
+## 安全提示
+
+⚠️ **重要安全提示**：
+
+1. **不要将包含真实API密钥的 run.sh 提交到公开代码仓库**
+2. **不要在公开场合分享您的API密钥**
+3. **建议将 run.sh 添加到 .gitignore（如果包含真实密钥）**
+4. **定期更换API密钥以确保安全**
+5. **run.sh 中的默认值仅为示例，请替换为您自己的配置**
+
+## 常见问题
+
+### Q: 如何配置API？
+A: 编辑 `run.sh` 文件，修改以下配置项：
+   ```bash
+   export API_BASE_URL="your_api_base_url"
+   export MODEL_NAME="your_model_name"
+   export API_KEY="your_api_key"
+   ```
+
+### Q: 支持哪些API服务？
+A: 支持所有OpenAI兼容的API服务，包括OpenAI官方、ModelArts、Azure、本地部署等。
+
+### Q: API调用失败怎么办？
+A: 请检查：
+   - API密钥是否正确
+   - API地址是否正确
+   - 模型名称是否正确
+   - 网络连接是否正常
+
+### Q: 如何更换模型？
+A: 修改 `MODEL_NAME` 环境变量即可，例如：
+   - OpenAI: `gpt-4`, `gpt-3.5-turbo`
+   - ModelArts: 根据您的模型名称
+   - 本地: 根据您部署的模型
 
 ## 注意事项
 
-- 确保网络连接正常，能够访问ModelArts Studio API
+- 确保网络连接正常，能够访问API服务
 - API调用可能产生费用，请注意控制使用量
 - 天气信息为AI生成，建议结合实际天气APP参考
 - 路线和行程规划为AI建议，请根据实际情况调整

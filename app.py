@@ -12,18 +12,16 @@
 
 import os
 import gradio as gr
-import requests
-import json
+from openai import OpenAI
 from datetime import datetime, timedelta
 from functools import lru_cache
 from typing import Dict, List, Optional, Tuple
 import re
 
 # 从环境变量获取API配置
-API_URL = os.getenv("API_URL", "")
-MODEL_NAME = os.getenv("MODEL_NAME", "")
+API_BASE_URL = os.getenv("API_BASE_URL", "https://api.openai.com/v1")
+MODEL_NAME = os.getenv("MODEL_NAME", "gpt-3.5-turbo")
 API_KEY = os.getenv("API_KEY", "")
-API_TYPE = os.getenv("API_TYPE", "openai")  # 支持: openai, custom, modelarts
 
 
 # 国家和地区数据
@@ -110,92 +108,19 @@ class TravelAssistant:
     """春节旅游计划AI助手类"""
 
     def __init__(self):
-        self.api_url = API_URL
+        self.api_base_url = API_BASE_URL
         self.model_name = MODEL_NAME
         self.api_key = API_KEY
-        self.api_type = API_TYPE.lower()
+
+        # 初始化OpenAI客户端
+        self.client = OpenAI(
+            api_key=self.api_key,
+            base_url=self.api_base_url
+        )
 
         # 验证配置
         if not self.api_key:
             print("⚠️  警告：API_KEY未设置")
-
-    def _build_openai_compatible_request(self, messages: List[Dict], max_tokens: int = 8000) -> Dict:
-        """
-        构建OpenAI兼容的请求格式
-
-        Args:
-            messages: 消息列表
-            max_tokens: 最大token数
-
-        Returns:
-            请求payload
-        """
-        return {
-            "model": self.model_name,
-            "messages": messages,
-            "temperature": 0.7,
-            "max_tokens": max_tokens
-        }
-
-    def _call_openai_api(self, payload: Dict, max_retries: int = 3) -> str:
-        """
-        使用OpenAI兼容方式调用API
-
-        Args:
-            payload: 请求payload
-            max_retries: 最大重试次数
-
-        Returns:
-            API响应文本
-        """
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}"
-        }
-
-        # 连接超时10秒，读取超时120秒
-        timeout = (10, 120)
-
-        last_error = None
-        for attempt in range(max_retries):
-            try:
-                response = requests.post(
-                    self.api_url,
-                    headers=headers,
-                    json=payload,
-                    timeout=timeout
-                )
-
-                if response.status_code == 200:
-                    result = response.json()
-                    # OpenAI格式响应
-                    content = result.get("choices", [{}])[0].get("message", {}).get("content", "")
-                    return self.post_process_response(content)
-                else:
-                    return f"API调用失败: {response.status_code} - {response.text}"
-
-            except requests.exceptions.Timeout as e:
-                last_error = e
-                print(f"API调用超时 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
-                if attempt < max_retries - 1:
-                    import time
-                    wait_time = 2 ** attempt
-                    print(f"等待 {wait_time} 秒后重试...")
-                    time.sleep(wait_time)
-                continue
-            except requests.exceptions.RequestException as e:
-                last_error = e
-                print(f"API调用网络错误 (尝试 {attempt + 1}/{max_retries}): {str(e)}")
-                if attempt < max_retries - 1:
-                    import time
-                    wait_time = 2 ** attempt
-                    print(f"等待 {wait_time} 秒后重试...")
-                    time.sleep(wait_time)
-                continue
-            except Exception as e:
-                return f"调用AI服务时发生错误: {str(e)}"
-
-        return f"调用AI服务时发生错误: 连接超时，已重试{max_retries}次仍失败。请稍后再试或检查网络连接。原始错误: {str(last_error)}"
 
     def post_process_response(self, response_text: str) -> str:
         """
@@ -262,7 +187,7 @@ class TravelAssistant:
 
     def call_ai_api(self, prompt: str, system_prompt: str = None, max_retries: int = 3, max_tokens: int = 8000) -> str:
         """
-        调用AI API（支持多种API提供商）
+        使用OpenAI库调用AI API
 
         Args:
             prompt: 用户提示词
@@ -279,11 +204,35 @@ class TravelAssistant:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        # 构建OpenAI兼容的请求payload
-        payload = self._build_openai_compatible_request(messages, max_tokens)
+        last_error = None
+        for attempt in range(max_retries):
+            try:
+                # 使用OpenAI库调用API
+                response = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=messages,
+                    temperature=0.7,
+                    max_tokens=max_tokens
+                )
 
-        # 统一使用OpenAI兼容方式调用API
-        return self._call_openai_api(payload, max_retries)
+                # 获取响应内容
+                content = response.choices[0].message.content
+                return self.post_process_response(content)
+
+            except Exception as e:
+                last_error = e
+                error_msg = str(e)
+                print(f"API调用错误 (尝试 {attempt + 1}/{max_retries}): {error_msg}")
+
+                # 检查是否是可重试的错误
+                if attempt < max_retries - 1:
+                    import time
+                    wait_time = 2 ** attempt  # 指数退避
+                    print(f"等待 {wait_time} 秒后重试...")
+                    time.sleep(wait_time)
+                    continue
+
+        return f"调用AI服务时发生错误: 已重试{max_retries}次仍失败。错误信息: {str(last_error)}"
 
     def get_weather_info(self, location: str, days: int = 7) -> str:
         """
@@ -1045,8 +994,7 @@ def main():
     print("=" * 60)
     print("春节旅游计划AI助手")
     print("=" * 60)
-    print(f"API类型: {API_TYPE}")
-    print(f"API URL: {API_URL}")
+    print(f"API Base URL: {API_BASE_URL}")
     print(f"Model: {MODEL_NAME}")
     print(f"API Key: {'已设置' if API_KEY else '未设置'}")
     print("=" * 60)
@@ -1054,21 +1002,28 @@ def main():
     if not API_KEY:
         print("⚠️  警告：API_KEY未设置，请确保环境变量已配置")
 
-    if not API_URL:
-        print("⚠️  警告：API_URL未设置，请确保环境变量已配置")
+    if not API_BASE_URL:
+        print("⚠️  警告：API_BASE_URL未设置，请确保环境变量已配置")
 
     if not MODEL_NAME:
         print("⚠️  警告：MODEL_NAME未设置，请确保环境变量已配置")
 
-    print("\n支持的API类型:")
-    print("  - openai: OpenAI官方API")
-    print("  - custom: 自定义OpenAI兼容API（如ModelArts、Azure等）")
-    print("  - modelarts: ModelArts Studio API")
+    print("\n使用OpenAI库调用API，支持任何OpenAI兼容的服务：")
+    print("  - OpenAI官方API")
+    print("  - ModelArts Studio API")
+    print("  - Azure OpenAI")
+    print("  - 本地部署（Ollama、vLLM等）")
+    print("  - 其他OpenAI兼容API")
     print("\n环境变量配置示例:")
-    print("  export API_TYPE=openai")
-    print("  export API_URL=https://api.openai.com/v1/chat/completions")
+    print("  # OpenAI官方")
+    print("  export API_BASE_URL=https://api.openai.com/v1")
     print("  export MODEL_NAME=gpt-4")
-    print("  export API_KEY=your-api-key-here")
+    print("  export API_KEY=sk-your-api-key")
+    print("")
+    print("  # ModelArts或其他兼容服务")
+    print("  export API_BASE_URL=https://your-endpoint/v1")
+    print("  export MODEL_NAME=your-model-name")
+    print("  export API_KEY=your-api-key")
     print("=" * 60)
 
     app = create_interface()
