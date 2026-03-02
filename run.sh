@@ -1,8 +1,8 @@
 #!/bin/bash
 
 # API配置（请修改）
-export API_URL="https://api.openai.com/v1"
-export MODEL_NAME="gpt-3.5-turbo"
+export API_URL="your_api_url"
+export MODEL_NAME="model_name"
 export API_KEY="your-api-key-here"
 
 # 安装依赖并启动

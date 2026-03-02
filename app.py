@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-春节旅游计划AI小助手
+旅游计划AI小助手
 使用Gradio + OpenAI兼容API实现
 
 支持的API类型：
@@ -18,6 +18,7 @@ import gradio as gr
 from openai import OpenAI
 from datetime import datetime, timedelta
 from functools import lru_cache
+from typing import Optional, Tuple
 
 # 从环境变量获取API配置
 API_URL = os.getenv("API_URL")
@@ -106,8 +107,83 @@ REGION_CACHE = {country: list(regions.keys()) for country, regions in COUNTRIES_
 # 星期映射表（英文转中文）
 WEEKDAY_MAP = {"Mon": "周一", "Tue": "周二", "Wed": "周三", "Thu": "周四", "Fri": "周五", "Sat": "周六", "Sun": "周日"}
 
+# 中国法定节假日数据（按年份存储）
+# 格式：{年份: {节假日名称: (开始日期, 结束日期)}}
+# 日期格式："(月, 日)"
+CHINESE_HOLIDAYS = {
+    2024: {
+        "元旦": ((1, 1), (1, 1)),
+        "春节": ((1, 21), (1, 27)),
+        "清明节": ((4, 4), (4, 6)),
+        "劳动节": ((5, 1), (5, 5)),
+        "端午节": ((6, 8), (6, 10)),
+        "中秋节": ((9, 15), (9, 17)),
+        "国庆节": ((10, 1), (10, 7)),
+    },
+    2025: {
+        "元旦": ((1, 1), (1, 1)),
+        "春节": ((1, 28), (2, 4)),
+        "清明节": ((4, 4), (4, 6)),
+        "劳动节": ((5, 1), (5, 5)),
+        "端午节": ((5, 31), (6, 2)),
+        "中秋节": ((10, 6), (10, 8)),
+        "国庆节": ((10, 1), (10, 8)),
+    },
+    2026: {
+        "元旦": ((1, 1), (1, 3)),
+        "春节": ((2, 17), (2, 23)),
+        "清明节": ((4, 4), (4, 6)),
+        "劳动节": ((5, 1), (5, 5)),
+        "端午节": ((6, 19), (6, 21)),
+        "中秋节": ((9, 25), (9, 27)),
+        "国庆节": ((10, 1), (10, 7)),
+    },
+}
+
+# 节假日特色描述
+HOLIDAY_FEATURES = {
+    "元旦": "新年伊始，万象更新，适合跨年旅行和迎接新年的第一缕阳光",
+    "春节": "阖家团圆的传统佳节，各地有丰富的年俗活动和庙会",
+    "清明节": "踏青扫墓的好时节，春暖花开，适合户外踏青",
+    "劳动节": "春末夏初的好时光，气候宜人，适合各类户外活动",
+    "端午节": "传统节日，各地有龙舟赛和粽子文化体验",
+    "中秋节": "团圆佳节，赏月品茗，适合家庭出游",
+    "国庆节": "金秋时节，天高气爽，是旅游的黄金季节",
+}
+
+
+def get_current_holiday() -> Optional[Tuple[str, str]]:
+    """
+    检测当前日期是否在中国法定节假日内
+
+    Returns:
+        如果在节假日，返回 (节假日名称, 节假日特色描述)
+        如果不在节假日，返回 None
+    """
+    today = datetime.now()
+    year = today.year
+    month = today.month
+    day = today.day
+
+    # 检查当前年份和相邻年份的节假日
+    for check_year in [year - 1, year, year + 1]:
+        if check_year not in CHINESE_HOLIDAYS:
+            continue
+
+        for holiday_name, ((start_month, start_day), (end_month, end_day)) in CHINESE_HOLIDAYS[check_year].items():
+            # 创建开始和结束日期对象
+            start_date = datetime(check_year, start_month, start_day)
+            end_date = datetime(check_year, end_month, end_day)
+
+            # 检查今天是否在节假日范围内
+            if start_date <= today <= end_date:
+                feature = HOLIDAY_FEATURES.get(holiday_name, "")
+                return (holiday_name, feature)
+
+    return None
+
 class TravelAssistant:
-    """春节旅游计划AI助手类"""
+    """旅游计划AI助手类"""
 
     def __init__(self):
         self.api_url = API_URL
@@ -153,6 +229,24 @@ class TravelAssistant:
         # 匹配普通雨天
         rain_pattern = r'(降雨|下雨|小雨|中雨|大雨|雨天).*?建议您(.*?)雨(具|伞|衣|披)'
         response_text = re.sub(rain_pattern, r'\1，建议您带上雨具', response_text)
+
+        # 5. 户外运动 + 雨天场景：添加穿雨披的温馨提示
+        # 匹配爬山、徒步、登山等户外运动相关内容，并在雨天时添加温馨提示
+        outdoor_keywords = ['爬山', '登山', '徒步', '攀岩', '穿越', '徒步旅行', '山地运动', '户外运动', '野外探险', '溯溪', '露营', '徒步穿越']
+        rain_keywords = ['降雨', '下雨', '小雨', '中雨', '大雨', '雨天', '有雨', '阴雨']
+
+        # 检查是否包含户外运动关键词
+        has_outdoor = any(keyword in response_text for keyword in outdoor_keywords)
+        # 检查是否包含雨天关键词
+        has_rain = any(keyword in response_text for keyword in rain_keywords)
+
+        # 如果同时包含户外运动和雨天，添加温馨提示
+        if has_outdoor and has_rain:
+            # 检查是否已经有雨披相关的提示
+            if '雨披' not in response_text and '穿雨披' not in response_text:
+                # 在文本末尾添加温馨提示
+                tip = "\n\n⛰️ 温馨提示：雨天进行户外运动，建议您穿雨披出行，既方便活动又能有效防雨，注意安全。"
+                response_text = response_text.rstrip() + tip
 
         # 去除重复表述
         pattern = r'(建议.*?雨(具|衣披).*?)，.*?最好.*?雨(具|衣披)'
@@ -260,8 +354,15 @@ class TravelAssistant:
         
         date_range = "、".join(date_list)
 
-        prompt = f"""请为{location}生成未来{days}天的天气预报信息。
-注意：这是春节旅游期间，请根据该地点的气候特点给出合理的天气预测。
+        # 检测当前是否在节假日
+        holiday_info = get_current_holiday()
+        holiday_context = ""
+        if holiday_info:
+            holiday_name, holiday_feature = holiday_info
+            holiday_context = f"\n注意：这是{holiday_name}假期期间，{holiday_feature}。"
+
+        prompt = f"""请为{location}生成未来{days}天的天气预报信息。{holiday_context}
+请根据该地点的气候特点给出合理的天气预测。
 请以表格形式展示，包含日期、天气状况、温度范围（最高温/最低温）、风力风向、穿衣建议等。
 
 【重要】日期显示要求：
@@ -326,11 +427,19 @@ class TravelAssistant:
         """
         location = f"{country}{city}" if city else country
 
-        prompt = f"""请推荐{location}春节期间值得游览的知名景点，包括以下内容：
+        # 检测当前是否在节假日
+        holiday_info = get_current_holiday()
+        holiday_context = ""
+        holiday_activity = ""
+        if holiday_info:
+            holiday_name, holiday_feature = holiday_info
+            holiday_context = f"{holiday_name}假期期间，"
+            holiday_activity = f"\n4. {holiday_name}期间的特殊活动或氛围"
+
+        prompt = f"""请推荐{location}{holiday_context}值得游览的知名景点，包括以下内容：
 1. 推荐至少5-10个必游景点
 2. 每个景点的简要介绍
-3. 景点之间的游览顺序建议
-4. 春节期间的特殊活动或氛围
+3. 景点之间的游览顺序建议{holiday_activity}
 5. 适合的游览天数建议
 6. 交通方式建议
 
@@ -355,15 +464,43 @@ class TravelAssistant:
         Returns:
             路线规划信息
         """
+        # 检测当前是否在节假日
+        holiday_info = get_current_holiday()
+        
         if transport_type == "自驾":
-                prompt = f"""请为从{start}到{end}的自驾路线提供详细的规划建议，包括：
+            # 构建节假日相关提示
+            holiday_tips = ""
+            holiday_service = ""
+            holiday_peak = ""
+            
+            if holiday_info:
+                holiday_name, holiday_feature = holiday_info
+                holiday_tips = f"\n    5. {holiday_name}期间高速免费政策和限行提醒（如适用）"
+                holiday_service = f"""
+    12. {holiday_name}特色服务区：
+        - {holiday_name}期间有特殊活动或装饰的服务区
+        - 提供{holiday_name}特色餐饮的服务区
+        - 有特色活动的服务区"""
+                holiday_peak = f"""
+    【出行建议】
+    13. {holiday_name}出行高峰期服务区拥挤预警和应对建议
+    14. 服务区加油排队建议（建议避开高峰时段）
+    15. 电动汽车充电服务区推荐（如有）"""
+            else:
+                holiday_tips = "\n    5. 高速收费政策和限行提醒（如适用）"
+                holiday_service = ""
+                holiday_peak = """
+    【出行建议】
+    13. 服务区加油排队建议（建议避开高峰时段）
+    14. 电动汽车充电服务区推荐（如有）"""
+
+            prompt = f"""请为从{start}到{end}的自驾路线提供详细的规划建议，包括：
 
     【基础路线信息】
     1. 推荐的行驶路线和高速公路
     2. 预计行驶距离和耗时
     3. 路况注意事项和驾驶建议
-    4. 可能的替代路线
-    5. 春节期间高速免费政策和限行提醒（如适用）
+    4. 可能的替代路线{holiday_tips}
     6. 停车建议
 
     【服务区休息建议】（重要）
@@ -376,7 +513,7 @@ class TravelAssistant:
        - 列出沿途主要服务区的名称、位置（距离起点的公里数）
        - 说明每个推荐服务区的设施情况（餐饮、加油、卫生间、便利店、WiFi、充电桩等）
        - 标注哪些服务区适合长时间休息（有餐厅、休息区），哪些适合短暂停留
-       - 标注服务区的开放时间和春节营业情况
+       - 标注服务区的开放时间{holiday_service}
 
     【特色服务区推荐】（重点推荐）
     9. 美食特色服务区：
@@ -392,17 +529,7 @@ class TravelAssistant:
     11. 服务优质服务区：
         - 推荐设施完善、服务优质的服务区（五星级服务区）
         - 推荐有特色商品或纪念品的服务区
-        - 推荐有亲子设施、宠物友好等服务区
-
-    12. 春节特色服务区：
-        - 春节期间有特殊活动或装饰的服务区
-        - 提供春节特色餐饮的服务区
-        - 有年货市集的服务区
-
-    【出行建议】
-    13. 春节出行高峰期服务区拥挤预警和应对建议
-    14. 服务区加油排队建议（建议避开高峰时段）
-    15. 电动汽车充电服务区推荐（如有）
+        - 推荐有亲子设施、宠物友好等服务区{holiday_peak}
 
     【沿途天气预警】（重点提醒）
     16. 沿途天气情况：
@@ -417,18 +544,22 @@ class TravelAssistant:
        - 大风提醒：💨 温馨提示：沿途预计有大风天气，建议您注意防风，大型车辆需特别注意侧风影响，谨慎驾驶。
        - 雾霾提醒：🌫️ 温馨提示：沿途预计有雾霾天气，建议您开启雾灯，保持安全车距，必要时选择服务区休息等待天气好转。
 
-    请用清晰的分段和列表形式呈现，便于驾驶员参考。特别注意春节出行高峰期，服务区可能较为拥挤，建议提前规划休息点。"""
+    请用清晰的分段和列表形式呈现，便于驾驶员参考。"""
 
-                system_prompt = """你是一个专业的自驾路线规划师，熟悉全国高速公路服务区分布和特色，能够为用户提供详细、实用的自驾出行建议，特别是服务区休息规划和特色服务区推荐，以及沿途天气预警和恶劣天气出行提醒。"""
+            system_prompt = """你是一个专业的自驾路线规划师，熟悉全国高速公路服务区分布和特色，能够为用户提供详细、实用的自驾出行建议，特别是服务区休息规划和特色服务区推荐，以及沿途天气预警和恶劣天气出行提醒。"""
         else:  # 公共交通
+            holiday_ticket = ""
+            if holiday_info:
+                holiday_name, _ = holiday_info
+                holiday_ticket = f"\n7. {holiday_name}期间的购票提醒和注意事项"
+            
             prompt = f"""请为从{start}到{end}的公共交通出行提供详细的规划建议，包括所有可能的交通方式：
 1. 飞机：推荐航班、机场信息、飞行时长、价格区间
 2. 火车/高铁：推荐车次、车站信息、运行时长、票价区间
 3. 长途汽车：推荐班次、车站信息、运行时长、票价区间
 4. 其他可能的交通方式（轮渡等）
 5. 各种交通方式的优缺点对比
-6. 推荐的最佳出行方案
-7. 春节期间的购票提醒和注意事项
+6. 推荐的最佳出行方案{holiday_ticket}
 8. 城市内交通接驳建议
 
 【沿途天气预警】（重点提醒）
@@ -475,6 +606,13 @@ class TravelAssistant:
         
         date_range = "、".join(date_list)
 
+        # 检测当前是否在节假日
+        holiday_info = get_current_holiday()
+        holiday_activity = ""
+        if holiday_info:
+            holiday_name, _ = holiday_info
+            holiday_activity = f"\n9. {holiday_name}期间的特色活动或氛围"
+
         prompt = f"""请为{destination}制定一个{days}天的详细行程规划，游玩风格为：{travel_style}。
 
 【重要】日期信息：
@@ -489,8 +627,7 @@ class TravelAssistant:
 5. 提供交通方式建议
 6. 包含用餐推荐
 7. 每天的预算预估
-8. 特别注意事项
-9. 春节期间的特色活动或氛围
+8. 特别注意事项{holiday_activity}
 10. 根据"{travel_style}"风格重点突出相关内容
 
 【天气与出行提示】（重要）
@@ -745,11 +882,11 @@ def create_interface():
     }
     """
 
-    with gr.Blocks(css=custom_css, title="春节旅游计划AI助手") as app:
+    with gr.Blocks(css=custom_css, title="旅游计划AI助手") as app:
         gr.HTML("""
         <div class="header">
-            <h1>🧧 春节旅游计划AI助手 🧧</h1>
-            <p>智能规划您的春节假期 · 探索精彩世界</p>
+            <h1>🌍 旅游计划AI助手 🌍</h1>
+            <p>智能规划您的旅程 · 探索精彩世界</p>
         </div>
         """)
 
@@ -920,7 +1057,7 @@ def create_interface():
         gr.HTML("""
         <div style="text-align: center; padding: 20px; color: #666; margin-top: 30px;">
             <p>💡 提示：所有功能均由AI驱动，建议结合实际情况进行调整</p>
-            <p style="margin-top: 10px;">Powered by ModelArts Studio | 春节旅游计划AI助手</p>
+            <p style="margin-top: 10px;">Powered by ModelArts Studio | 旅游计划AI助手</p>
         </div>
         """)
 
@@ -929,7 +1066,7 @@ def create_interface():
 def main():
     """主函数"""
     print("=" * 60)
-    print("春节旅游计划AI助手")
+    print("旅游计划AI助手")
     print("=" * 60)
     print(f"API URL: {API_URL}")
     print(f"Model: {MODEL_NAME}")
