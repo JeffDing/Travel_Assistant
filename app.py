@@ -329,22 +329,46 @@ class TravelAssistant:
 
         return f"调用AI服务时发生错误: 已重试{max_retries}次仍失败。错误信息: {str(last_error)}"
 
-    def get_weather_info(self, location: str, days: int = 7) -> str:
+    def get_weather_info(self, location: str, days: int = 7, start_date: str = None) -> str:
         """
         获取天气信息（模拟数据，实际可接入真实天气API）
 
         Args:
             location: 地点名称
             days: 查询天数
+            start_date: 出发日期（格式：YYYY-MM-DD），如果为None则从明天开始
 
         Returns:
             天气信息文本
         """
-        # 计算具体日期
         today = datetime.now()
+        
+        # 解析出发日期
+        if start_date:
+            try:
+                departure_date = datetime.strptime(start_date, "%Y-%m-%d")
+            except ValueError:
+                departure_date = today + timedelta(days=1)
+        else:
+            departure_date = today + timedelta(days=1)
+        
+        # 计算日期差，判断是近期还是远期
+        days_from_now = (departure_date - today).days
+        
+        # 判断天气类型：7天内为近期天气，超过7天为远期/历史天气
+        if days_from_now <= 7:
+            weather_type = "近期实时天气预测"
+            weather_context = "请根据该地点当前季节和气候特点，给出合理的近期天气预测。"
+        else:
+            weather_type = "历史天气推算"
+            weather_context = f"""由于出发日期距今较远（{days_from_now}天后），无法提供准确的实时天气预报。
+请根据该地点的历史气候数据和季节特点，推算该时段的典型天气情况。
+请说明这是基于历史气候数据的推算，仅供参考。"""
+        
+        # 计算具体日期
         date_list = []
-        for i in range(1, days + 1):
-            future_date = today + timedelta(days=i)
+        for i in range(days):
+            future_date = departure_date + timedelta(days=i)
             # 格式：2月20日（周四）
             date_str = future_date.strftime("%m月%d日（%a）")
             # 将英文星期转换为中文
@@ -354,15 +378,32 @@ class TravelAssistant:
         
         date_range = "、".join(date_list)
 
-        # 检测当前是否在节假日
-        holiday_info = get_current_holiday()
+        # 检测出发日期是否在节假日
+        holiday_info = None
+        year = departure_date.year
+        month = departure_date.month
+        day = departure_date.day
+        
+        for check_year in [year - 1, year, year + 1]:
+            if check_year not in CHINESE_HOLIDAYS:
+                continue
+            for holiday_name, ((start_month, start_day), (end_month, end_day)) in CHINESE_HOLIDAYS[check_year].items():
+                start_date_obj = datetime(check_year, start_month, start_day)
+                end_date_obj = datetime(check_year, end_month, end_day)
+                if start_date_obj <= departure_date <= end_date_obj:
+                    feature = HOLIDAY_FEATURES.get(holiday_name, "")
+                    holiday_info = (holiday_name, feature)
+                    break
+            if holiday_info:
+                break
+        
         holiday_context = ""
         if holiday_info:
             holiday_name, holiday_feature = holiday_info
             holiday_context = f"\n注意：这是{holiday_name}假期期间，{holiday_feature}。"
 
-        prompt = f"""请为{location}生成未来{days}天的天气预报信息。{holiday_context}
-请根据该地点的气候特点给出合理的天气预测。
+        prompt = f"""请为{location}生成{days}天的{weather_type}信息。{holiday_context}
+{weather_context}
 请以表格形式展示，包含日期、天气状况、温度范围（最高温/最低温）、风力风向、穿衣建议等。
 
 【重要】日期显示要求：
@@ -405,9 +446,15 @@ class TravelAssistant:
 7. 门票信息（如有）
 8. 周边配套设施
 
+【衣着建议与必需品清单】（重要）
+9. 👔 衣着建议：根据景点的气候、季节特点，推荐适合的服装（如：上衣、裤子、鞋子、外套等）
+10. 🎒 必需品清单：列出游览该景点的必备物品（如：防晒用品、雨具、舒适的鞋子等）
+11. 📸 拍照建议：推荐的拍照装备和最佳拍照点
+12. 💊 健康与安全：游览时的健康注意事项和常用药品建议
+
 请用清晰的结构化方式呈现，便于阅读。"""
 
-        system_prompt = """你是一个专业的旅游景点介绍专家，请提供准确、详细、实用的景点介绍信息。"""
+        system_prompt = """你是一个专业的旅游景点介绍专家，请提供准确、详细、实用的景点介绍信息，包括衣着建议和必需品清单。"""
 
         attraction_info = self.call_ai_api(prompt, system_prompt)
         weather_info = self.get_weather_info(attraction, days=7)
@@ -443,9 +490,15 @@ class TravelAssistant:
 5. 适合的游览天数建议
 6. 交通方式建议
 
+【衣着建议与必需品清单】（重要）
+7. 👔 衣着建议：根据{location}的气候、季节特点，推荐适合的服装（如：上衣、裤子、鞋子、外套等）
+8. 🎒 必需品清单：列出旅行必备物品（如：证件、充电器、常用药品、防晒用品、雨具等）
+9. 🌡️ 特殊天气物品：根据当地气候推荐特殊物品（如：防晒霜、墨镜、保暖衣物、雨衣等）
+10. 💊 健康与安全：常用药品和安全用品建议
+
 请用清晰的结构化方式呈现，便于游客参考。"""
 
-        system_prompt = """你是一个专业的旅游规划师，熟悉全球各地的旅游景点，能够为游客提供实用的景点推荐建议。"""
+        system_prompt = """你是一个专业的旅游规划师，熟悉全球各地的旅游景点，能够为游客提供实用的景点推荐建议，包括衣着建议和必需品清单。"""
 
         attractions = self.call_ai_api(prompt, system_prompt)
         weather = self.get_weather_info(location, days=7)
@@ -544,9 +597,15 @@ class TravelAssistant:
        - 大风提醒：💨 温馨提示：沿途预计有大风天气，建议您注意防风，大型车辆需特别注意侧风影响，谨慎驾驶。
        - 雾霾提醒：🌫️ 温馨提示：沿途预计有雾霾天气，建议您开启雾灯，保持安全车距，必要时选择服务区休息等待天气好转。
 
+    【衣着建议与必需品清单】（重要）
+    18. 👔 衣着建议：根据沿途气候和季节，推荐适合自驾的服装（如：舒适的驾驶服装、外套等）
+    19. 🎒 必需品清单：列出长途自驾必备物品（如：驾驶证、行驶证、车载充电器、应急工具包、备用轮胎等）
+    20. 🚗 车辆准备：出发前的车辆检查建议（如：轮胎、机油、刹车、灯光等）
+    21. 💊 健康与安全：长途驾驶的健康注意事项和常用药品建议（如：晕车药、提神用品等）
+
     请用清晰的分段和列表形式呈现，便于驾驶员参考。"""
 
-            system_prompt = """你是一个专业的自驾路线规划师，熟悉全国高速公路服务区分布和特色，能够为用户提供详细、实用的自驾出行建议，特别是服务区休息规划和特色服务区推荐，以及沿途天气预警和恶劣天气出行提醒。"""
+            system_prompt = """你是一个专业的自驾路线规划师，熟悉全国高速公路服务区分布和特色，能够为用户提供详细、实用的自驾出行建议，特别是服务区休息规划和特色服务区推荐，以及沿途天气预警和恶劣天气出行提醒，并提供衣着建议和必需品清单。"""
         else:  # 公共交通
             holiday_ticket = ""
             if holiday_info:
@@ -574,13 +633,19 @@ class TravelAssistant:
     - 暴雨、暴雪等恶劣天气提醒：⚠️ 温馨提示：沿途预计有恶劣天气，建议您穿雨衣雨披，注意出行安全。
     - 大风提醒：💨 温馨提示：沿途预计有大风天气，建议您注意防风，避免户外高空活动。
 
+【衣着建议与必需品清单】（重要）
+11. 👔 衣着建议：根据沿途气候和季节，推荐适合长途旅行的服装（如：舒适的旅行服装、外套等）
+12. 🎒 必需品清单：列出长途旅行必备物品（如：身份证、车票/机票、充电器、常用药品、零食、水等）
+13. 📱 电子设备：推荐的电子设备和配件（如：充电宝、耳机、平板电脑等）
+14. 💊 健康与安全：长途旅行的健康注意事项和常用药品建议（如：晕车药、感冒药等）
+
 请提供全面的公共交通出行方案。"""
 
-            system_prompt = """你是一个专业的公共交通出行规划师，熟悉各种交通方式，能够为用户提供全面的出行方案，以及沿途天气预警和恶劣天气出行提醒。"""
+            system_prompt = """你是一个专业的公共交通出行规划师，熟悉各种交通方式，能够为用户提供全面的出行方案，以及沿途天气预警和恶劣天气出行提醒，并提供衣着建议和必需品清单。"""
 
         return self.call_ai_api(prompt, system_prompt)
 
-    def plan_itinerary(self, destination: str, days: int, travel_style: str) -> str:
+    def plan_itinerary(self, destination: str, days: int, travel_style: str, start_date: str = None) -> str:
         """
         规划每日游玩行程
 
@@ -588,15 +653,35 @@ class TravelAssistant:
             destination: 目的地
             days: 游玩天数
             travel_style: 游玩风格
+            start_date: 出发日期（格式：YYYY-MM-DD）
 
         Returns:
             每日行程规划
         """
-        # 计算具体日期
         today = datetime.now()
+        
+        # 解析出发日期
+        if start_date:
+            try:
+                departure_date = datetime.strptime(start_date, "%Y-%m-%d")
+            except ValueError:
+                departure_date = today + timedelta(days=1)
+        else:
+            departure_date = today + timedelta(days=1)
+        
+        # 计算日期差，判断是近期还是远期
+        days_from_now = (departure_date - today).days
+        
+        # 判断天气类型
+        if days_from_now <= 7:
+            weather_type = "近期实时天气预测"
+        else:
+            weather_type = "历史气候推算"
+        
+        # 计算具体日期
         date_list = []
-        for i in range(1, days + 1):
-            future_date = today + timedelta(days=i)
+        for i in range(days):
+            future_date = departure_date + timedelta(days=i)
             # 格式：2月20日（周四）
             date_str = future_date.strftime("%m月%d日（%a）")
             # 将英文星期转换为中文
@@ -606,8 +691,25 @@ class TravelAssistant:
         
         date_range = "、".join(date_list)
 
-        # 检测当前是否在节假日
-        holiday_info = get_current_holiday()
+        # 检测出发日期是否在节假日
+        holiday_info = None
+        year = departure_date.year
+        month = departure_date.month
+        day = departure_date.day
+        
+        for check_year in [year - 1, year, year + 1]:
+            if check_year not in CHINESE_HOLIDAYS:
+                continue
+            for holiday_name, ((start_month, start_day), (end_month, end_day)) in CHINESE_HOLIDAYS[check_year].items():
+                start_date_obj = datetime(check_year, start_month, start_day)
+                end_date_obj = datetime(check_year, end_month, end_day)
+                if start_date_obj <= departure_date <= end_date_obj:
+                    feature = HOLIDAY_FEATURES.get(holiday_name, "")
+                    holiday_info = (holiday_name, feature)
+                    break
+            if holiday_info:
+                break
+        
         holiday_activity = ""
         if holiday_info:
             holiday_name, _ = holiday_info
@@ -616,7 +718,9 @@ class TravelAssistant:
         prompt = f"""请为{destination}制定一个{days}天的详细行程规划，游玩风格为：{travel_style}。
 
 【重要】日期信息：
+- 出发日期：{start_date if start_date else '明天'}
 - 行程日期范围：{date_range}
+- 天气预测类型：{weather_type}
 - 请在每天的行程开头显示具体日期（如"## 📅 第1天 - 02月20日（周四）"）
 
 要求：
@@ -633,7 +737,7 @@ class TravelAssistant:
 【天气与出行提示】（重要）
 11. 请为每一天的行程添加天气情况预测：
     - 在每天行程开头显示当日天气（如"🌤️ 天气：晴，温度 15-22℃，微风"）
-    - 根据该地点的气候特点和季节给出合理的天气预测
+    - 根据{weather_type}给出合理的天气预测
     
 12. 根据天气情况给出出行提示（重要格式要求）：
     - 天气提示必须在天气信息下方**换行**单独显示
@@ -651,9 +755,17 @@ class TravelAssistant:
     - 高温天气（35℃以上）：添加"🌡️ 温馨提示：预计高温天气，建议您做好防晒防暑，多补充水分。"
     - 低温天气（0℃以下）：添加"🥶 温馨提示：预计低温天气，建议您注意保暖，穿戴厚实衣物。"
 
+【衣着建议与必需品清单】（重要）
+13. 在行程最后，请添加一个专门的"🎒 出行准备清单"部分，包含：
+    - 👔 衣着建议：根据目的地的气候、季节和天气情况，推荐适合的服装（如：上衣、裤子、鞋子、外套等）
+    - 🎒 必需品清单：列出旅行必备物品（如：证件、充电器、常用药品、防晒用品、雨具等）
+    - 🌡️ 特殊天气物品：根据天气情况推荐特殊物品（如：防晒霜、墨镜、保暖衣物、雨衣等）
+    - 📱 电子设备：推荐的电子设备和配件
+    - 💊 健康与安全：常用药品和安全用品建议
+
 请按天详细列出，便于执行。如果天数较长，可以安排返程或休息日。"""
 
-        system_prompt = """你是一个专业的行程规划师，能够根据用户的需求和喜好，制定详细、实用、个性化的旅游行程计划。你需要根据目的地的气候特点和季节，为每天的行程提供合理的天气预测和相应的出行建议。"""
+        system_prompt = """你是一个专业的行程规划师，能够根据用户的需求和喜好，制定详细、实用、个性化的旅游行程计划。你需要根据目的地的气候特点和季节，为每天的行程提供合理的天气预测和相应的出行建议，并提供详细的衣着建议和必需品清单。"""
 
         return self.call_ai_api(prompt, system_prompt)
 
@@ -745,12 +857,22 @@ def plan_route_handler(start: str, end: str, transport_type: str) -> str:
         print(f"{error_msg}\n{traceback.format_exc()}")
         return error_msg
 
-def plan_itinerary_handler(destination: str, days: int, travel_style: str) -> str:
+def plan_itinerary_handler(destination: str, days: int, travel_style: str, start_date: str = None) -> str:
     """处理行程规划请求"""
     try:
         if not destination or not days:
             return "请输入目的地和游玩天数"
-        return assistant.plan_itinerary(destination, days, travel_style)
+        
+        # 处理 gr.DateTime 返回的日期格式
+        if start_date:
+            # gr.DateTime 返回格式可能是 "YYYY-MM-DD HH:MM:SS" 或 datetime 对象
+            if isinstance(start_date, datetime):
+                start_date = start_date.strftime("%Y-%m-%d")
+            elif isinstance(start_date, str) and len(start_date) > 10:
+                # 如果是带时间的字符串，只取日期部分
+                start_date = start_date.split()[0]
+        
+        return assistant.plan_itinerary(destination, days, travel_style, start_date)
     except Exception as e:
         error_msg = f"规划行程时发生错误: {str(e)}"
         print(f"{error_msg}\n{traceback.format_exc()}")
@@ -1005,10 +1127,23 @@ def create_interface():
                 )
 
             with gr.TabItem("📅 行程规划", id=4):
-                gr.Markdown("### 制定您的详细游玩行程")
-
                 with gr.Row():
                     with gr.Column(scale=1):
+                        # 计算明天的日期作为默认值
+                        tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+                        
+                        itinerary_start_date = gr.Textbox(
+                            label="出发日期",
+                            value=tomorrow,
+                            info="请输入出发日期（格式：YYYY-MM-DD），默认明天出发"
+                        )
+                        
+                        # 添加日期快捷选择按钮
+                        with gr.Row():
+                            tomorrow_btn = gr.Button("明天", size="sm", variant="secondary")
+                            week_btn = gr.Button("一周后", size="sm", variant="secondary")
+                            month_btn = gr.Button("一月后", size="sm", variant="secondary")
+
                         itinerary_destination = gr.Textbox(
                             label="目的地",
                             placeholder="例如：北京、巴黎、东京..."
@@ -1049,9 +1184,23 @@ def create_interface():
 
                 itinerary_btn.click(
                     fn=plan_itinerary_handler,
-                    inputs=[itinerary_destination, itinerary_days, itinerary_style],
+                    inputs=[itinerary_destination, itinerary_days, itinerary_style, itinerary_start_date],
                     outputs=[itinerary_output]
                 )
+                
+                # 日期快捷按钮点击事件
+                def set_date_tomorrow():
+                    return (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
+                
+                def set_date_week():
+                    return (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d")
+                
+                def set_date_month():
+                    return (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+                
+                tomorrow_btn.click(fn=set_date_tomorrow, outputs=itinerary_start_date)
+                week_btn.click(fn=set_date_week, outputs=itinerary_start_date)
+                month_btn.click(fn=set_date_month, outputs=itinerary_start_date)
 
         # 页脚
         gr.HTML("""
